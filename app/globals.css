@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Semantic color tokens. Values are space-separated RGB channels so Tailwind
+   can apply opacity modifiers (e.g. `bg-surface/80`).
+   Light theme = default; dark theme overrides under `.dark`. */
+:root {
+  --app-bg: 248 250 252; /* slate-50  - page background */
+  --surface: 255 255 255; /* white     - cards, sidebar, top bar */
+  --border: 226 232 240; /* slate-200 - hairlines and dividers */
+  --muted: 100 116 139; /* slate-500 - secondary text */
+  --accent: 79 70 229; /* indigo-600 - primary actions */
+  --accent-soft: 238 242 255; /* indigo-50 - active nav background */
+}
+
+.dark {
+  --app-bg: 15 23 42; /* slate-900 */
+  --surface: 30 41 59; /* slate-800 */
+  --border: 51 65 85; /* slate-700 */
+  --muted: 148 163 184; /* slate-400 */
+  --accent: 129 140 248; /* indigo-400 - brighter for contrast on dark */
+  --accent-soft: 49 46 129; /* indigo-900 */
+}
+
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* Visible, consistent focus ring for keyboard users. */
+:focus-visible {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 2px;
+}

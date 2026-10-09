@@ -1,0 +1,175 @@
+"use client";
+
+import { useState } from "react";
+import { PageHeader } from "@/components";
+import { EmptyState, ErrorBanner, LoadingRows } from "@/components/ui";
+import TaskTabs from "@/components/tasks/TaskTabs";
+import TaskCard from "@/components/tasks/TaskCard";
+import TaskFormModal from "@/components/tasks/TaskFormModal";
+import ConfirmDeleteModal from "@/components/tasks/ConfirmDeleteModal";
+import { useTasks } from "@/hooks/useTasks";
+import type { Task, TaskInsert } from "@/types";
+
+// Tasks page. All data access lives in useTasks; this component handles the
+// view: the tab bar, the list, and the two modals.
+export default function TasksPage() {
+  const {
+    tasks,
+    counts,
+    loading,
+    error,
+    filter,
+    setFilter,
+    reload,
+    createTask,
+    updateTask,
+    toggleTask,
+    deleteTask,
+  } = useTasks();
+
+  // null = closed. For the form, holds the task being edited; for delete, the task to remove.
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Task | null>(null);
+  const [deleting, setDeleting] = useState<Task | null>(null);
+
+  // Ids currently mid-mutation, so their controls can be disabled.
+  const [busyIds, setBusyIds] = useState<string[]>([]);
+
+  function markBusy(id: string, busy: boolean) {
+    setBusyIds((prev) => (busy ? [...prev, id] : prev.filter((x) => x !== id)));
+  }
+
+  function openAdd() {
+    setEditing(null);
+    setFormOpen(true);
+  }
+
+  function openEdit(task: Task) {
+    setEditing(task);
+    setFormOpen(true);
+  }
+
+  /** Passed to the modal; returns a promise so the modal can await it. */
+  async function handleSubmit(values: TaskInsert) {
+    if (editing) {
+      await updateTask(editing.id, values);
+    } else {
+      await createTask(values);
+    }
+  }
+
+  async function handleToggle(task: Task) {
+    markBusy(task.id, true);
+    try {
+      await toggleTask(task);
+    } finally {
+      markBusy(task.id, false);
+    }
+  }
+
+  async function handleDelete(task: Task) {
+    markBusy(task.id, true);
+    try {
+      await deleteTask(task.id);
+    } finally {
+      markBusy(task.id, false);
+    }
+  }
+
+  // What the empty state should say depends on the active tab.
+  const emptyCopy: Record<typeof filter, { title: string; hint: string }> = {
+    all: { title: "No tasks yet", hint: "Add your first task to get started." },
+    today: { title: "Nothing due today", hint: "Your day is clear." },
+    upcoming: { title: "Nothing coming up", hint: "Tasks due after today will appear here." },
+    overdue: { title: "Nothing overdue", hint: "Nicely on top of things." },
+  };
+
+  return (
+    <>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <PageHeader
+          title="Tasks"
+          description="Assignments and to-dos, grouped by course and due date."
+        />
+
+        <button
+          type="button"
+          onClick={openAdd}
+          className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+        >
+          <svg
+            className="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          Add task
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        <TaskTabs active={filter} onChange={setFilter} counts={counts} />
+
+        {/* Only shown when a Supabase query actually failed. The message comes
+            straight from Supabase, and Retry re-runs the query. */}
+        {error ? <ErrorBanner message={error} onRetry={reload} /> : null}
+
+        {loading ? (
+          <LoadingRows count={3} label="Loading tasks" />
+        ) : error ? null : tasks.length === 0 ? (
+          <EmptyState
+            title={emptyCopy[filter].title}
+            hint={emptyCopy[filter].hint}
+            // Only offer "Add task" on tabs where creating makes sense.
+            actionLabel={
+              filter === "all" || filter === "today" || filter === "upcoming"
+                ? "Add task"
+                : undefined
+            }
+            onClick={
+              filter === "all" || filter === "today" || filter === "upcoming"
+                ? openAdd
+                : undefined
+            }
+          />
+        ) : (
+          <ul className="space-y-3">
+            {tasks.map((task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                busy={busyIds.includes(task.id)}
+                onToggle={handleToggle}
+                onEdit={openEdit}
+                onDelete={setDeleting}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <TaskFormModal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        onSubmit={handleSubmit}
+        task={editing}
+      />
+
+      <ConfirmDeleteModal
+        task={deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={handleDelete}
+      />
+    </>
+  );
+}
+
+// The list states (loading, error, empty) are shared primitives now - see
+// components/ui. They were lifted out of here so the dashboard could use the
+// exact same treatment instead of a lookalike.
