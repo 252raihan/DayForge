@@ -346,6 +346,59 @@ create policy "Users can delete own subtasks"
 
 
 -- ===========================================================================
+-- 5. tasks - recurrence deduplication  (appended 2026-10-09)
+-- ===========================================================================
+-- Completing a recurring task inserts its next occurrence. Two things could
+-- trigger that insert - a double click, or two tabs/devices racing - so "one
+-- occurrence per source and due date" has to be a database guarantee, not an
+-- application-code check. A partial unique index gives exactly that, and the
+-- second concurrent insert simply fails with SQLSTATE 23505 instead of creating
+-- a duplicate.
+
+-- Which task this row is the next occurrence of. NULL = not an occurrence of
+-- anything, which is the case for every ordinary task. A row-level CHECK would
+-- enforce the "source must be recurring" part, but it would need a subquery,
+-- which CHECK forbids; the composite FK below gets the guarantee without one.
+alter table public.tasks
+  add column if not exists recurrence_source_id uuid;
+
+comment on column public.tasks.recurrence_source_id is
+  'The task this row is the next occurrence of. NULL for ordinary tasks.';
+
+-- Self-reference back to tasks. Dropped first because Postgres has no
+-- `add constraint if not exists`, matching the guard used for the subtask FK.
+--
+-- ON DELETE SET NULL, not CASCADE: deleting a task that happens to be someone's
+-- source must not wipe out a list of other tasks. The only thing lost is the
+-- link, and deleting a task already switches recurrence off. The composite FK
+-- (id, user_id) - not the plain tasks (id) - is deliberate: it makes the source
+-- row provably belong to the same user as the row referencing it, so a crafted
+-- recurrence_source_id cannot point at another user's task.
+alter table public.tasks
+  drop constraint if exists tasks_recurrence_source_fk;
+alter table public.tasks
+  add constraint tasks_recurrence_source_fk
+  foreign key (recurrence_source_id, user_id)
+  references public.tasks (id, user_id)
+  on delete set null;
+
+-- The deduplication guarantee itself.
+--
+-- Partial, because recurrence_source_id IS NULL on every ordinary task and
+-- those must never collide: in a plain unique index, NULLs are still distinct
+-- from each other, but a partial index states the intent and keeps the
+-- structure free of rows that can never collide.
+--
+-- `if not exists` is load-bearing here. A plain CREATE UNIQUE INDEX that hits a
+-- table already holding duplicate pairs fails the whole statement (and the
+-- script); guarded this way, a first run that genuinely cannot build the index
+-- leaves the table without one, and a later run warns and skips instead.
+create unique index if not exists tasks_recurrence_occurrence_key
+  on public.tasks (recurrence_source_id, due_at)
+  where recurrence_source_id is not null;
+
+
+-- ===========================================================================
 -- POST-SETUP CHECKLIST - verify these in the Supabase dashboard
 -- ===========================================================================
 -- [ ] TABLES EXIST
@@ -360,9 +413,42 @@ create policy "Users can delete own subtasks"
 --     Check `subtasks`  has 4 policies (select, insert, update, delete).
 --
 -- [ ] RECURRING TASK COLUMNS
---     `tasks` should have `recurrence_type` (default 'none') and
---     `recurrence_days`. Both check constraints should be present:
+--     `tasks` should have `recurrence_type` (default 'none'),
+--     `recurrence_days`, and `recurrence_source_id` (NULL for ordinary tasks).
+--     Both check constraints should be present:
 --     tasks_recurrence_type_check and tasks_recurrence_days_check.
+--
+-- [ ] RECURRENCE DEDUPLICATION
+--     Run this and expect ONE row with indexdef ending in
+--     "WHERE (recurrence_source_id IS NOT NULL)":
+--       select indexname, indexdef from pg_indexes
+--        where schemaname = 'public' and tablename = 'tasks'
+--          and indexname = 'tasks_recurrence_occurrence_key';
+--
+--     If the statement that created it reported
+--     "NOTICE: ... skipping" instead, the table already contained duplicate
+--     (recurrence_source_id, due_at) pairs. Remove the duplicates, then
+--     re-run this file.
+--
+--     Then confirm the guard bites. The second insert must fail with
+--     "duplicate key value violates unique constraint
+--     \"tasks_recurrence_occurrence_key\"":
+--       begin;
+--       insert into public.tasks (user_id, title, due_at, recurrence_source_id)
+--       select user_id, 'dup guard A', due_at, recurrence_source_id
+--         from public.tasks
+--        where recurrence_source_id is not null
+--        order by created_at limit 1;
+--       insert into public.tasks (user_id, title, due_at, recurrence_source_id)
+--       select user_id, 'dup guard B', due_at, recurrence_source_id
+--         from public.tasks
+--        where recurrence_source_id is not null
+--        order by created_at limit 1;
+--       rollback;   -- leaves no trace
+--
+--     A unique index is enforced for every transaction, so the same rejection
+--     is what a second concurrent insert gets - the loser of the race errors,
+--     it does not create a duplicate row.
 --
 -- [ ] SIGNUP TRIGGER WORKS
 --     Create a test account, then confirm a matching row appeared in

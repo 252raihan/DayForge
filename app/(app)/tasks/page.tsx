@@ -4,6 +4,7 @@ import { useState } from "react";
 import { PageHeader } from "@/components";
 import { EmptyState, ErrorBanner, LoadingRows } from "@/components/ui";
 import TaskTabs from "@/components/tasks/TaskTabs";
+import TaskToolbar from "@/components/tasks/TaskToolbar";
 import TaskCard from "@/components/tasks/TaskCard";
 import TaskFormModal from "@/components/tasks/TaskFormModal";
 import ConfirmDeleteModal from "@/components/tasks/ConfirmDeleteModal";
@@ -11,20 +12,37 @@ import { useTasks } from "@/hooks/useTasks";
 import type { Task, TaskInsert } from "@/types";
 
 // Tasks page. All data access lives in useTasks; this component handles the
-// view: the tab bar, the list, and the two modals.
+// view: the toolbar, the tab bar, the list, and the two modals.
 export default function TasksPage() {
   const {
     tasks,
     counts,
+    subtasksByTask,
+    categories,
     loading,
     error,
     filter,
     setFilter,
+    search,
+    setSearch,
+    priority,
+    setPriority,
+    category,
+    setCategory,
+    status,
+    setStatus,
+    sort,
+    setSort,
+    hasActiveRefinements,
+    clearRefinements,
     reload,
     createTask,
     updateTask,
     toggleTask,
     deleteTask,
+    addSubtask,
+    toggleSubtask,
+    deleteSubtask,
   } = useTasks();
 
   // null = closed. For the form, holds the task being edited; for delete, the task to remove.
@@ -76,13 +94,23 @@ export default function TasksPage() {
     }
   }
 
-  // What the empty state should say depends on the active tab.
+  // What the empty state should say depends on the active tab - and on whether
+  // the toolbar is hiding rows the tab would otherwise contain.
   const emptyCopy: Record<typeof filter, { title: string; hint: string }> = {
     all: { title: "No tasks yet", hint: "Add your first task to get started." },
     today: { title: "Nothing due today", hint: "Your day is clear." },
     upcoming: { title: "Nothing coming up", hint: "Tasks due after today will appear here." },
     overdue: { title: "Nothing overdue", hint: "Nicely on top of things." },
   };
+
+  // When a search or filter is active, "nothing here" usually means "nothing
+  // matched" rather than "nothing exists", so say that instead.
+  const empty = hasActiveRefinements
+    ? {
+      title: "No matching tasks",
+      hint: "Try a different search, or clear the filters.",
+    }
+    : emptyCopy[filter];
 
   return (
     <>
@@ -114,6 +142,24 @@ export default function TasksPage() {
       </div>
 
       <div className="space-y-4">
+        {/* Search, filters and sort. They narrow the list that the tabs then
+            slice, and the tab counts follow the same narrowing. */}
+        <TaskToolbar
+          search={search}
+          onSearchChange={setSearch}
+          priority={priority}
+          onPriorityChange={setPriority}
+          category={category}
+          onCategoryChange={setCategory}
+          status={status}
+          onStatusChange={setStatus}
+          sort={sort}
+          onSortChange={setSort}
+          categories={categories}
+          hasActiveRefinements={hasActiveRefinements}
+          onClear={clearRefinements}
+        />
+
         <TaskTabs active={filter} onChange={setFilter} counts={counts} />
 
         {/* Only shown when a Supabase query actually failed. The message comes
@@ -124,18 +170,23 @@ export default function TasksPage() {
           <LoadingRows count={3} label="Loading tasks" />
         ) : error ? null : tasks.length === 0 ? (
           <EmptyState
-            title={emptyCopy[filter].title}
-            hint={emptyCopy[filter].hint}
-            // Only offer "Add task" on tabs where creating makes sense.
+            title={empty.title}
+            hint={empty.hint}
+            // Offer "Clear filters" while the toolbar is narrowing, and
+            // "Add task" only on tabs where creating makes sense.
             actionLabel={
-              filter === "all" || filter === "today" || filter === "upcoming"
-                ? "Add task"
-                : undefined
+              hasActiveRefinements
+                ? "Clear filters"
+                : filter === "all" || filter === "today" || filter === "upcoming"
+                  ? "Add task"
+                  : undefined
             }
             onClick={
-              filter === "all" || filter === "today" || filter === "upcoming"
-                ? openAdd
-                : undefined
+              hasActiveRefinements
+                ? clearRefinements
+                : filter === "all" || filter === "today" || filter === "upcoming"
+                  ? openAdd
+                  : undefined
             }
           />
         ) : (
@@ -144,10 +195,15 @@ export default function TasksPage() {
               <TaskCard
                 key={task.id}
                 task={task}
+                subtasks={subtasksByTask.get(task.id) ?? EMPTY_SUBTASKS}
+                subtasksLoading={loading}
                 busy={busyIds.includes(task.id)}
                 onToggle={handleToggle}
                 onEdit={openEdit}
                 onDelete={setDeleting}
+                onAddSubtask={addSubtask}
+                onToggleSubtask={toggleSubtask}
+                onDeleteSubtask={deleteSubtask}
               />
             ))}
           </ul>
@@ -169,6 +225,10 @@ export default function TasksPage() {
     </>
   );
 }
+
+// A stable empty array, so a task with no checklist does not get a fresh [] on
+// every render (which would defeat the SubTaskList's memo-friendly props).
+const EMPTY_SUBTASKS: never[] = [];
 
 // The list states (loading, error, empty) are shared primitives now - see
 // components/ui. They were lifted out of here so the dashboard could use the

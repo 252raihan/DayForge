@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import StatTile from "@/components/ui/StatTile";
 import DashboardTaskList from "@/components/dashboard/DashboardTaskList";
-import { useTasks, isOverdue, isUpcoming } from "@/hooks/useTasks";
+import { useTasks, matchesFilter } from "@/hooks/useTasks";
 import { CardHeader } from "@/components/ui/Card";
 import type { Task, TaskFilter } from "@/types";
 
@@ -28,19 +28,23 @@ export default function DashboardTasks({ initialTasks }: { initialTasks: Task[] 
   // is never an empty hole.
   const rows = loading && tasks.length === 0 ? initialTasks : tasks;
 
+  // Headline numbers. These deliberately reuse the SAME predicates the tab
+  // counts use (isOverdue / isUpcoming / matchesFilter), so "Due today" here can
+  // never drift from the Today tab on /tasks.
   const stats = useMemo(() => {
     const open = rows.filter((t) => t.status !== "done");
     return {
-      dueToday: open.filter((t) => !isOverdue(t) && isToday(t)).length,
-      upcoming: rows.filter(isUpcoming).length,
-      overdue: rows.filter(isOverdue).length,
+      dueToday: rows.filter((t) => matchesFilter(t, "today")).length,
+      upcoming: rows.filter((t) => matchesFilter(t, "upcoming")).length,
+      overdue: rows.filter((t) => matchesFilter(t, "overdue")).length,
       open: open.length,
     };
   }, [rows]);
 
   // What to show in the panel: whatever tab is active, capped to MAX_ROWS.
+  // Same predicate as the counts above and as the Tasks page.
   const visible = useMemo(
-    () => rows.filter((t) => matchesTab(t, filter)).slice(0, MAX_ROWS),
+    () => rows.filter((t) => matchesFilter(t, filter)).slice(0, MAX_ROWS),
     [rows, filter],
   );
 
@@ -146,28 +150,8 @@ export default function DashboardTasks({ initialTasks }: { initialTasks: Task[] 
   );
 }
 
-/** Local-day check (the dashboard groups by the browser's calendar day). */
-function isToday(task: Task): boolean {
-  if (!task.due_at) return false;
-  const d = new Date(task.due_at);
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
-}
-
-/** Mirrors the tab logic on the Tasks page so both views agree. */
-function matchesTab(task: Task, filter: TaskFilter): boolean {
-  switch (filter) {
-    case "today":
-      return isToday(task) && !isOverdue(task);
-    case "upcoming":
-      return isUpcoming(task);
-    case "overdue":
-      return isOverdue(task);
-    case "all":
-      return true;
-  }
-}
+/**
+ * The dashboard's headline tiles read from `rows` (which may be the server-seeded
+ * list on first paint), while the tab counts come from the hook. Both sides use
+ * the shared matchesFilter, so the two views agree once the fetch resolves.
+ */

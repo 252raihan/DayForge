@@ -3,13 +3,21 @@
 import { useEffect, useState } from "react";
 import Modal from "@/components/tasks/Modal";
 import { Field, FormMessage, SubmitButton } from "@/components/ui/Form";
-import { localInputToUtc, utcToLocalInput } from "@/hooks/useTasks";
-import type { Task, TaskInsert, TaskPriority } from "@/types";
+import { localInputToUtc, utcToLocalInput, WEEKDAY_LABELS } from "@/hooks/useTasks";
+import type { RecurrenceType, Task, TaskInsert, TaskPriority } from "@/types";
 
 // Create / edit form shown in a modal.
 // Passing a `task` switches the modal into edit mode.
 
 const PRIORITIES: TaskPriority[] = ["low", "medium", "high"];
+
+// The Repeat selector. "Custom days" reveals the weekday buttons below it.
+const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string }[] = [
+  { value: "none", label: "None" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "custom", label: "Custom days" },
+];
 
 // Suggested categories - the field is free text, so users can type their own.
 const CATEGORY_SUGGESTIONS = ["Personal", "Assignment", "Exam", "Study", "Project"];
@@ -35,6 +43,9 @@ export default function TaskFormModal({
   const [dueAt, setDueAt] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [category, setCategory] = useState("Personal");
+  const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>("none");
+  // 0 = Sunday .. 6 = Saturday, matching the `recurrence_days` column.
+  const [recurrenceDays, setRecurrenceDays] = useState<number[]>([]);
 
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -48,10 +59,19 @@ export default function TaskFormModal({
     setDueAt(utcToLocalInput(task?.due_at ?? null));
     setPriority(task?.priority ?? "medium");
     setCategory(task?.category ?? "Personal");
+    setRecurrenceType(task?.recurrence_type ?? "none");
+    setRecurrenceDays(task?.recurrence_days ?? []);
     setErrors({});
     setFormError(null);
     setPending(false);
   }, [open, task]);
+
+  /** Adds or removes a weekday from the custom-days selection. */
+  function toggleDay(day: number) {
+    setRecurrenceDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort((a, b) => a - b),
+    );
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -64,6 +84,11 @@ export default function TaskFormModal({
     if (trimmedTitle.length > 200) next.title = "That title is too long (200 characters max).";
     if (description.length > 2000) next.description = "That description is too long (2000 characters max).";
     if (category.trim().length > 60) next.category = "That category is too long (60 characters max).";
+    // "Custom days" needs at least one day, or there is no next occurrence to
+    // schedule and the DB check constraint would reject the row anyway.
+    if (recurrenceType === "custom" && recurrenceDays.length === 0) {
+      next.recurrence = "Pick at least one day, or choose a different repeat option.";
+    }
 
     if (Object.keys(next).length > 0) {
       setErrors(next);
@@ -79,6 +104,10 @@ export default function TaskFormModal({
       due_at: localInputToUtc(dueAt),
       priority,
       category: category.trim() || "Personal",
+      recurrence_type: recurrenceType,
+      // The column is NULL unless the type is "custom" - the check constraint
+      // requires a 1-7 element array containing only values 0-6 otherwise.
+      recurrence_days: recurrenceType === "custom" ? recurrenceDays : null,
     };
 
     try {
@@ -222,6 +251,67 @@ export default function TaskFormModal({
           {errors.category ? (
             <p className="text-xs font-medium text-red-600 dark:text-red-400">
               {errors.category}
+            </p>
+          ) : null}
+        </div>
+
+        {/* Repeat: None / Daily / Weekly / Custom days. */}
+        <div className="space-y-1.5">
+          <label htmlFor="recurrence" className="block text-sm font-medium">
+            Repeat
+          </label>
+          <select
+            id="recurrence"
+            name="recurrence"
+            value={recurrenceType}
+            onChange={(e) => setRecurrenceType(e.target.value as RecurrenceType)}
+            className="w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/40"
+          >
+            {RECURRENCE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          {/* Weekday picker, only relevant to "Custom days". */}
+          {recurrenceType === "custom" ? (
+            <fieldset className="pt-1">
+              <legend className="mb-1.5 text-xs text-muted">Repeat on</legend>
+              <div className="flex flex-wrap gap-1.5">
+                {WEEKDAY_LABELS.map((label, day) => {
+                  const selected = recurrenceDays.includes(day);
+                  return (
+                    <label
+                      key={label}
+                      className={`cursor-pointer rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${selected
+                          ? "border-accent bg-accent-soft text-accent"
+                          : "border-border text-muted hover:bg-accent-soft/50"
+                        }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={selected}
+                        onChange={() => toggleDay(day)}
+                      />
+                      {label}
+                    </label>
+                  );
+                })}
+              </div>
+              {errors.recurrence ? (
+                <p className="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">
+                  {errors.recurrence}
+                </p>
+              ) : null}
+            </fieldset>
+          ) : null}
+
+          {/* A repeating task needs a due date to anchor the next occurrence. */}
+          {recurrenceType !== "none" && !dueAt ? (
+            <p className="text-xs text-muted">
+              Add a due date above so the next occurrence can be scheduled.
             </p>
           ) : null}
         </div>
