@@ -1,9 +1,10 @@
 "use client";
 
-import type { SubTask, Task } from "@/types";
+import type { DailyStatus, SubTask, Task, TaskProgress } from "@/types";
 import { isDueToday, isOverdue, recurrenceLabel } from "@/hooks/useTasks";
 import { formatDueDate, PriorityBadge } from "@/components/tasks/task-utils";
 import SubTaskList from "@/components/tasks/SubTaskList";
+import TaskProgressStrip from "@/components/tasks/TaskProgressStrip";
 
 // A single task card: completion checkbox, title, priority badge, due date, the
 // recurrence hint, the subtask checklist and the edit/delete actions.
@@ -17,6 +18,9 @@ export default function TaskCard({
   onAddSubtask,
   onToggleSubtask,
   onDeleteSubtask,
+  progress,
+  todayStatus,
+  onMarkToday,
   busy,
 }: {
   task: Task;
@@ -30,6 +34,12 @@ export default function TaskCard({
   onAddSubtask: (taskId: string, title: string) => Promise<void>;
   onToggleSubtask: (subtask: SubTask) => Promise<void>;
   onDeleteSubtask: (id: string) => Promise<void>;
+  /** This task's daily history and completion percentage. */
+  progress: TaskProgress;
+  /** Today's answer for this task (null = not marked yet). */
+  todayStatus: DailyStatus | null;
+  /** Submits today's Yes/No for this task. */
+  onMarkToday: (task: Task, status: DailyStatus) => void;
   /** True while a mutation on this row is in flight. */
   busy?: boolean;
 }) {
@@ -148,6 +158,15 @@ export default function TaskCard({
             onAdd={(title) => onAddSubtask(task.id, title)}
             onToggle={onToggleSubtask}
             onDelete={onDeleteSubtask}
+          />
+
+          {/* Daily completion history: the green/red chart and the percentage,
+              with the Yes/No buttons for today. */}
+          <TaskProgressStrip
+            progress={progress}
+            today={todayStatus}
+            busy={busy}
+            onMarkToday={(_progress, status) => onMarkToday(task, status)}
           />
         </div>
 

@@ -9,7 +9,7 @@ import TaskCard from "@/components/tasks/TaskCard";
 import TaskFormModal from "@/components/tasks/TaskFormModal";
 import ConfirmDeleteModal from "@/components/tasks/ConfirmDeleteModal";
 import { useTasks } from "@/hooks/useTasks";
-import type { Task, TaskInsert } from "@/types";
+import type { DailyStatus, Task, TaskInsert, TaskProgress } from "@/types";
 
 // Tasks page. All data access lives in useTasks; this component handles the
 // view: the toolbar, the tab bar, the list, and the two modals.
@@ -43,6 +43,9 @@ export default function TasksPage() {
     addSubtask,
     toggleSubtask,
     deleteSubtask,
+    progressByTask,
+    todayStatusByTask,
+    submitDailyStatus,
   } = useTasks();
 
   // null = closed. For the form, holds the task being edited; for delete, the task to remove.
@@ -89,6 +92,18 @@ export default function TasksPage() {
     markBusy(task.id, true);
     try {
       await deleteTask(task.id);
+    } finally {
+      markBusy(task.id, false);
+    }
+  }
+
+  /** Records today's Yes/No for a task, straight from its card. */
+  async function handleMarkToday(task: Task, status: DailyStatus) {
+    markBusy(task.id, true);
+    try {
+      await submitDailyStatus(task, status);
+    } catch (err) {
+      console.error("[DayForge] failed to submit daily status:", err);
     } finally {
       markBusy(task.id, false);
     }
@@ -204,6 +219,9 @@ export default function TasksPage() {
                 onAddSubtask={addSubtask}
                 onToggleSubtask={toggleSubtask}
                 onDeleteSubtask={deleteSubtask}
+                progress={progressByTask.get(task.id) ?? fallbackProgress(task)}
+                todayStatus={todayStatusByTask.get(task.id) ?? null}
+                onMarkToday={handleMarkToday}
               />
             ))}
           </ul>
@@ -229,6 +247,13 @@ export default function TasksPage() {
 // A stable empty array, so a task with no checklist does not get a fresh [] on
 // every render (which would defeat the SubTaskList's memo-friendly props).
 const EMPTY_SUBTASKS: never[] = [];
+
+// progressByTask is built for every task on each render, so this only runs in
+// the split second before the first render settles. It keeps the card's props
+// non-optional without a non-null assertion.
+function fallbackProgress(task: Task): TaskProgress {
+  return { task, history: [], completedDays: 0, trackedDays: 0, completionRate: 0 };
+}
 
 // The list states (loading, error, empty) are shared primitives now - see
 // components/ui. They were lifted out of here so the dashboard could use the

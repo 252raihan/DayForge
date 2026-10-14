@@ -3,9 +3,11 @@
 import { useMemo, useState } from "react";
 import StatTile from "@/components/ui/StatTile";
 import DashboardTaskList from "@/components/dashboard/DashboardTaskList";
+import TodayTasksPanel from "@/components/dashboard/TodayTasksPanel";
+import CompletionChart from "@/components/dashboard/CompletionChart";
 import { useTasks, matchesFilter } from "@/hooks/useTasks";
 import { CardHeader } from "@/components/ui/Card";
-import type { Task, TaskFilter } from "@/types";
+import type { DailyStatus, DailyPoint, Task, TaskFilter, TodayTaskProgress } from "@/types";
 
 // How many rows the dashboard shows before linking off to the full Tasks page.
 const MAX_ROWS = 5;
@@ -21,12 +23,57 @@ const TABS: TaskFilter[] = ["today", "upcoming", "overdue", "all"];
 // very first paint instead of a spinner; the hook then refetches on mount to
 // pick up anything that changed in another tab.
 export default function DashboardTasks({ initialTasks }: { initialTasks: Task[] }) {
-  const { tasks, counts, loading, error, reload, toggleTask, filter, setFilter } = useTasks();
+  const {
+    tasks,
+    counts,
+    loading,
+    error,
+    reload,
+    toggleTask,
+    filter,
+    setFilter,
+    todayProgress,
+    submitDailyStatus,
+  } = useTasks();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   // Prefer the seeded rows until the client fetch resolves, so the first render
   // is never an empty hole.
   const rows = loading && tasks.length === 0 ? initialTasks : tasks;
+
+  // Today's tasks = the same predicate the Today tab uses, so the panel at the
+  // top and the "Due today" tile can never disagree.
+  const todaysTasks = useMemo(
+    () => todayProgress.filter((p) => matchesFilter(p.task, "today")),
+    [todayProgress],
+  );
+
+  // The overall daily-completion picture across every task: each task's most
+  // recent answer becomes one bar, so the dashboard shows productivity at a
+  // glance without opening each task.
+  const overallHistory = useMemo<DailyPoint[]>(() => {
+    const byDate = new Map<string, DailyPoint>();
+    for (const progress of todayProgress) {
+      for (const point of progress.history) byDate.set(point.date, point);
+    }
+    return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+  }, [todayProgress]);
+
+  const overallRate = useMemo(() => {
+    const answered = todayProgress.filter((p) => p.today !== null);
+    if (answered.length === 0) return 0;
+    const yes = answered.filter((p) => p.today === "yes").length;
+    return Math.round((yes / answered.length) * 100);
+  }, [todayProgress]);
+
+  async function handleDailySubmit(task: TodayTaskProgress, status: DailyStatus) {
+    setBusyId(task.task.id);
+    try {
+      await submitDailyStatus(task.task, status);
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   // Headline numbers. These deliberately reuse the SAME predicates the tab
   // counts use (isOverdue / isUpcoming / matchesFilter), so "Due today" here can
@@ -76,6 +123,44 @@ export default function DashboardTasks({ initialTasks }: { initialTasks: Task[] 
           </button>
         </div>
       ) : null}
+
+      {/* Today's Tasks: the very first thing on the dashboard. Review each task
+          scheduled for today and submit its status with Yes or No. */}
+      <TodayTasksPanel
+        tasks={todaysTasks}
+        loading={loading && rows.length === 0}
+        onSubmit={handleDailySubmit}
+        busyId={busyId}
+      />
+
+      {/* Daily completion across all tasks: one chart, plus today's rate. */}
+      <section className="rounded-2xl border border-border bg-surface p-5">
+        <CardHeader
+          title="Daily completion"
+          action={
+            <span className="text-xs font-semibold text-muted">
+              {overallRate}% today
+            </span>
+          }
+        />
+        <p className="mb-3 text-xs text-muted">
+          <span className="mr-3 inline-flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500" /> Yes
+          </span>
+          <span className="mr-3 inline-flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500" /> No
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm bg-border" /> Not answered
+          </span>
+        </p>
+        <CompletionChart
+          history={overallHistory}
+          dayCount={21}
+          height="h-24"
+          label="Overall daily completion"
+        />
+      </section>
 
       {/* Headline numbers. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

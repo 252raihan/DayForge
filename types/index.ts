@@ -98,4 +98,54 @@ export type SubTaskInsert = {
   title: string;
 };
 
+/**
+ * The daily status a user picks for a task: "Yes" completed it, "No" did not.
+ * Stored as the boolean `task_daily_logs.completed`.
+ */
+export type DailyStatus = "yes" | "no";
+
+/** A row from `public.task_daily_logs` - one task's status for one day. */
+export type TaskDailyLog = {
+  id: string;
+  user_id: string;
+  task_id: string;
+  /** Calendar day in the user's own timezone, as YYYY-MM-DD. */
+  log_date: string;
+  completed: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Payload for submitting a day's status. `user_id` defaults to auth.uid(). */
+export type TaskDailyLogInsert = {
+  task_id: string;
+  log_date: string;
+  completed: boolean;
+};
+
+/** One day's cell in a task's history chart. */
+export type DailyPoint = {
+  /** YYYY-MM-DD. */
+  date: string;
+  completed: boolean;
+};
+
+/** A task's daily history plus the derived consistency numbers. */
+export type TaskProgress = {
+  task: Task;
+  /** Oldest first, one entry per day that has a log. */
+  history: DailyPoint[];
+  /** Days marked "Yes". */
+  completedDays: number;
+  /** Days with any log at all ("Yes" or "No"). */
+  trackedDays: number;
+  /** completedDays / trackedDays, as a 0-100 integer. 0 when nothing tracked. */
+  completionRate: number;
+};
+
+/** A task's progress for the Today panel, plus today's answer (null = unanswered). */
+export type TodayTaskProgress = TaskProgress & {
+  today: DailyStatus | null;
+};
+
 export { };

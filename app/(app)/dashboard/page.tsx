@@ -7,9 +7,10 @@ import DashboardTasks from "@/components/dashboard/DashboardTasks";
 // Dashboard: the overview of "your day".
 //
 // Rendering split: the greeting is static for the whole session, so it renders
-// on the server. The task summary is interactive (the rows have checkboxes), so
-// the first page of tasks is fetched on the server and handed to a client
-// component, which reuses the same `useTasks` data layer as the Tasks page.
+// on the server. The task summary and the daily-completion panels are
+// interactive (Yes/No buttons, checkboxes), so the first page of tasks is
+// fetched on the server and handed to a client component, which reuses the same
+// `useTasks` data layer as the Tasks page - daily logs included.
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
@@ -23,7 +24,7 @@ export default async function DashboardPage() {
     <>
       <PageHeader
         title={`Hi, ${displayName}`}
-        description="An overview of your day: upcoming deadlines, today's tasks and habit streaks."
+        description="Your day at a glance: mark today's tasks Yes or No, and watch your daily completion chart fill up."
       />
 
       {/* Seed data for the client hook. It refetches on mount, which is what

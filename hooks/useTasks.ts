@@ -3,13 +3,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type {
+  DailyPoint,
+  DailyStatus,
   SubTask,
   Task,
+  TaskDailyLog,
   TaskFilter,
   TaskInsert,
   TaskPriority,
+  TaskProgress,
   TaskSort,
   TaskUpdate,
+  TodayTaskProgress,
 } from "@/types";
 
 // All Task data access lives here, so the page and its components stay free of
@@ -42,6 +47,9 @@ export function useTasks() {
   // Subtasks are kept in one flat list keyed by task id, because they are only
   // ever rendered grouped by task. One query loads every checklist at once.
   const [subtasks, setSubtasks] = useState<SubTask[]>([]);
+  // Daily completion history: one row per task per day. Kept flat and grouped
+  // by task on demand, exactly like subtasks.
+  const [dailyLogs, setDailyLogs] = useState<TaskDailyLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,7 +81,7 @@ export function useTasks() {
 
     // RLS scopes both queries to the signed-in user, so no explicit filter is
     // needed beyond the ordering.
-    const [tasksResult, subtasksResult] = await Promise.all([
+    const [tasksResult, subtasksResult, dailyLogsResult] = await Promise.all([
       supabase
         .from("tasks")
         .select("*")
@@ -84,6 +92,11 @@ export function useTasks() {
         .from("subtasks")
         .select("*")
         .order("created_at", { ascending: true }),
+      supabase
+        .from("task_daily_logs")
+        .select("*")
+        // Oldest first, so a task's chart reads left-to-right as time.
+        .order("log_date", { ascending: true }),
     ]);
 
     // Surface the real Supabase message so the banner is diagnosable.
@@ -101,8 +114,16 @@ export function useTasks() {
       return;
     }
 
+    if (dailyLogsResult.error) {
+      console.error("[DayForge] failed to load daily logs:", dailyLogsResult.error.message);
+      setError(dailyLogsResult.error.message);
+      setLoading(false);
+      return;
+    }
+
     setTasks((tasksResult.data as Task[]) ?? []);
     setSubtasks((subtasksResult.data as SubTask[]) ?? []);
+    setDailyLogs((dailyLogsResult.data as TaskDailyLog[]) ?? []);
     // Clear any previous failure so the banner disappears on a good reload.
     setError(null);
     setLoading(false);
@@ -236,10 +257,12 @@ export function useTasks() {
       throw new Error("Could not delete the task. Please try again.");
     }
 
-    // The database cascades the delete to the task's subtasks (subtasks_task_fk
-    // ... ON DELETE CASCADE), so mirror that locally instead of refetching.
+    // The database cascades the delete to the task's subtasks and daily logs
+    // (both FKs are ON DELETE CASCADE), so mirror that locally instead of
+    // refetching.
     setTasks((prev) => prev.filter((t) => t.id !== id));
     setSubtasks((prev) => prev.filter((s) => s.task_id !== id));
+    setDailyLogs((prev) => prev.filter((log) => log.task_id !== id));
   }, []);
 
   // --- Mutations: subtasks ------------------------------------------------
@@ -308,6 +331,75 @@ export function useTasks() {
     setSubtasks((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
+  // --- Mutations: daily completion logs ------------------------------------
+
+  /**
+   * Records today's status for a task: "yes" completed it, "no" did not.
+   *
+   * Uses an upsert keyed on (task_id, log_date), so submitting again on the same
+   * day replaces the row instead of stacking a duplicate - which is what keeps
+   * "one status per task per day" true and lets the user correct a mistake.
+   *
+   * Optimistic: the chart and the percentage update the moment the button is
+   * pressed, and roll back if the server rejects the write.
+   */
+  const submitDailyStatus = useCallback(
+    async (task: Task, status: DailyStatus, date: string = todayKey()) => {
+      const supabase = createClient();
+      const completed = status === "yes";
+
+      // Replace any existing row for this task/day so the optimistic state and
+      // the upsert agree even when the user flips Yes -> No.
+      let previous: TaskDailyLog | undefined;
+      setDailyLogs((prev) => {
+        previous = prev.find((log) => log.task_id === task.id && log.log_date === date);
+        const withoutToday = prev.filter(
+          (log) => !(log.task_id === task.id && log.log_date === date),
+        );
+        const optimistic: TaskDailyLog = {
+          id: previous?.id ?? `optimistic-${task.id}-${date}`,
+          user_id: previous?.user_id ?? task.user_id,
+          task_id: task.id,
+          log_date: date,
+          completed,
+          created_at: previous?.created_at ?? new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        return [...withoutToday, optimistic];
+      });
+
+      const { data, error } = await supabase
+        .from("task_daily_logs")
+        .upsert(
+          { task_id: task.id, log_date: date, completed },
+          { onConflict: "task_id,log_date" },
+        )
+        .select()
+        .single();
+
+      if (error) {
+        console.error("[DayForge] failed to submit daily status:", error.message);
+        // Roll back to exactly what the server still holds.
+        setDailyLogs((prev) => {
+          const withoutToday = prev.filter(
+            (log) => !(log.task_id === task.id && log.log_date === date),
+          );
+          return previous ? [...withoutToday, previous] : withoutToday;
+        });
+        throw new Error("Could not save today's status. Please try again.");
+      }
+
+      // Swap the optimistic row for the real one the server returned.
+      const saved = data as TaskDailyLog;
+      setDailyLogs((prev) => [
+        ...prev.filter((log) => !(log.task_id === task.id && log.log_date === date)),
+        saved,
+      ]);
+      return saved;
+    },
+    [],
+  );
+
   // --- Derived state ------------------------------------------------------
 
   // Subtasks grouped by task, so a card can read its own checklist in O(1).
@@ -320,6 +412,60 @@ export function useTasks() {
     }
     return map;
   }, [subtasks]);
+
+  // --- Derived daily-completion state --------------------------------------
+
+  // Daily logs grouped by task, oldest first (the fetch already ordered them).
+  const dailyLogsByTask = useMemo(() => {
+    const map = new Map<string, TaskDailyLog[]>();
+    for (const log of dailyLogs) {
+      const list = map.get(log.task_id);
+      if (list) list.push(log);
+      else map.set(log.task_id, [log]);
+    }
+    return map;
+  }, [dailyLogs]);
+
+  /**
+   * Today's status per task, keyed by task id. A task with no entry has not
+   * been answered yet today, which is exactly what the Today panel needs.
+   */
+  const todayStatusByTask = useMemo(() => {
+    const today = todayKey();
+    const map = new Map<string, DailyStatus>();
+    for (const log of dailyLogs) {
+      if (log.log_date === today) map.set(log.task_id, log.completed ? "yes" : "no");
+    }
+    return map;
+  }, [dailyLogs]);
+
+  /**
+   * Per-task history and consistency numbers, for the progress charts.
+   * Built from the same flat log list, so a card, the dashboard chart and the
+   * headline tiles can never disagree about a percentage.
+   */
+  const progressByTask = useMemo(() => {
+    const map = new Map<string, TaskProgress>();
+    for (const task of tasks) {
+      const logs = dailyLogsByTask.get(task.id) ?? [];
+      map.set(task.id, buildProgress(task, logs));
+    }
+    return map;
+  }, [tasks, dailyLogsByTask]);
+
+  /**
+   * Today's answer for every task, already shaped for the panel: answered ones
+   * keep their "yes"/"no", unanswered ones are null.
+   */
+  const todayProgress = useMemo<TodayTaskProgress[]>(
+    () =>
+      tasks.map((task) => {
+        const logs = dailyLogsByTask.get(task.id) ?? [];
+        const base = buildProgress(task, logs);
+        return { ...base, today: todayStatusByTask.get(task.id) ?? null };
+      }),
+    [tasks, dailyLogsByTask, todayStatusByTask],
+  );
 
   /** Every category in use, for the category filter dropdown. */
   const categories = useMemo(() => {
@@ -395,6 +541,13 @@ export function useTasks() {
     categories,
     loading,
     error,
+
+    // Daily completion
+    dailyLogsByTask,
+    todayStatusByTask,
+    progressByTask,
+    todayProgress,
+    submitDailyStatus,
 
     // Tab
     filter,
@@ -651,4 +804,69 @@ export function utcToLocalInput(utc: string | null): string {
     `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
     `T${pad(date.getHours())}:${pad(date.getMinutes())}`
   );
+}
+
+// ---------------------------------------------------------------------------
+// Daily completion helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Today's calendar day as YYYY-MM-DD, in the BROWSER's timezone.
+ *
+ * Built from local parts on purpose: `toISOString()` would give the UTC day,
+ * which is a different calendar day for anyone west of Greenwich in the
+ * evening. The stored `log_date` must match the day the user thinks it is.
+ */
+export function todayKey(date: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * Turns a flat list of a task's logs into the chart history and the derived
+ * consistency numbers. Pure, so the hook's memos and any test can reuse it.
+ *
+ * `completionRate` is completedDays / trackedDays - a missed day lowers the
+ * percentage, an unanswered day does not count at all. That is what makes the
+ * number "how often I did it when I tracked it", not "how many days exist".
+ */
+export function buildProgress(task: Task, logs: TaskDailyLog[]): TaskProgress {
+  const history: DailyPoint[] = logs.map((log) => ({
+    date: log.log_date,
+    completed: log.completed,
+  }));
+
+  const completedDays = history.filter((point) => point.completed).length;
+  const trackedDays = history.length;
+  const completionRate = trackedDays === 0 ? 0 : Math.round((completedDays / trackedDays) * 100);
+
+  return { task, history, completedDays, trackedDays, completionRate };
+}
+
+/**
+ * The last `days` calendar days, oldest first, as YYYY-MM-DD keys. Used to give
+ * the chart a fixed, gap-free x-axis so a missed day is a red bar rather than
+ * a missing one.
+ */
+export function recentDayKeys(days: number, endDate: Date = new Date()): string[] {
+  const keys: string[] = [];
+  for (let offset = days - 1; offset >= 0; offset -= 1) {
+    const d = new Date(endDate);
+    d.setDate(d.getDate() - offset);
+    keys.push(todayKey(d));
+  }
+  return keys;
+}
+
+/**
+ * Lines a task's history up with a fixed window of days (oldest first).
+ * A day with no log comes back as null, so the chart can render it as "not
+ * answered" instead of pretending it was a miss.
+ */
+export function alignHistoryToDays(
+  history: DailyPoint[],
+  dayKeys: string[],
+): (DailyPoint | null)[] {
+  const byDate = new Map(history.map((point) => [point.date, point]));
+  return dayKeys.map((date) => byDate.get(date) ?? null);
 }

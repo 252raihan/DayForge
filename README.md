@@ -8,9 +8,36 @@ Built with **Next.js (App Router)**, **Tailwind CSS**, and **Supabase**
 One user per email account. Every database table has a `user_id` column with
 row-level security, so a user can only read and write their own rows.
 
-> Status: authentication, the app shell and the Tasks feature are implemented.
-> The dashboard summarises your tasks. Calendar, notes, challenges and habits
-> are still placeholders.
+> Status: authentication, the app shell, the Tasks feature and daily task
+> completion tracking are implemented. The dashboard summarises your tasks and
+> tracks daily completion. Calendar, notes, challenges and habits are still
+> placeholders.
+
+## Daily task completion tracking
+
+For every task you can record, once per day, whether you completed it:
+
+- **Yes** — you did it that day.
+- **No** — you did not.
+
+The dashboard opens with a **Today's Tasks** section. It lists every task due
+today, each with its green/red history chart, its running completion percentage,
+and the two buttons that submit today's answer. There are deliberately **no
+per-task alerts or notifications** — the daily reminder is simply the top of the
+dashboard.
+
+Completion history lives in `task_daily_logs` (one row per task per day,
+`completed` boolean), and drives:
+
+- a **per-task chart** on each task card (green = Yes, red = No,
+  grey = not answered) with a `completedDays / trackedDays` percentage;
+- the **overall daily-completion chart** on the dashboard;
+- the headline tiles and the Today's Tasks summary line.
+
+Submitting is an upsert keyed on `(task_id, log_date)`, so changing your answer
+during the day updates the same row instead of creating a duplicate. `log_date`
+is a plain calendar date in your own timezone, so "did I do it on the 14th?"
+means the same day wherever you read it.
 
 ## Folder structure
 
