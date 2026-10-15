@@ -12,11 +12,18 @@ export default function ConfirmDeleteModal({
   task,
   onClose,
   onConfirm,
+  consequences,
 }: {
   /** The task to delete, or null when the dialog is closed. */
   task: Task | null;
   onClose: () => void;
   onConfirm: (task: Task) => Promise<void>;
+  /**
+   * Related rows that will disappear with the task (its checklist, its daily
+   * history). Both relationships cascade in the database, so this is stated up
+   * front rather than discovered afterwards.
+   */
+  consequences?: string[];
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,15 +57,28 @@ export default function ConfirmDeleteModal({
       open={Boolean(task)}
       onClose={onClose}
       title="Delete this task?"
-      description="This can't be undone."
+      description="This task, its checklist and its daily history will be removed. This can't be undone."
     >
       {error ? <div className="mb-4"><FormMessage>{error}</FormMessage></div> : null}
 
       {task ? (
-        <p className="mb-5 rounded-xl border border-border bg-app px-3.5 py-2.5 text-sm">
+        <p className="rounded-xl border border-border bg-app px-3.5 py-2.5 text-sm">
           {task.title}
         </p>
       ) : null}
+
+      {consequences && consequences.length > 0 ? (
+        <div className="mb-5 mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
+          <p className="font-semibold">Also removed with this task:</p>
+          <ul className="mt-1 list-inside list-disc space-y-0.5">
+            {consequences.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="mb-5" />
+      )}
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <button

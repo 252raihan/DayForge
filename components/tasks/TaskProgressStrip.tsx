@@ -3,6 +3,9 @@
 import CompletionChart from "@/components/dashboard/CompletionChart";
 import type { DailyStatus, TaskProgress } from "@/types";
 
+// How many recent days the per-task chart plots.
+export const TASK_CHART_DAYS = 14;
+
 // The per-task daily history shown on a task card: the green/red chart plus the
 // completion percentage. Read-only here - the interactive Yes/No submission
 // lives on the dashboard's "Today's Tasks" panel, so this strip just makes the
@@ -23,6 +26,8 @@ export default function TaskProgressStrip({
   const { task, history, completionRate, completedDays, trackedDays } = progress;
   const interactive = typeof onMarkToday === "function";
 
+  // "5/7 days" is the raw count of every answered day. The percentage is
+  // measured over the same days, so the two never tell different stories.
   return (
     <div className="mt-3 rounded-xl border border-border bg-app px-3 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
@@ -30,7 +35,7 @@ export default function TaskProgressStrip({
           Daily history
           <span className="ml-1.5 font-normal">
             {trackedDays > 0
-              ? `${completedDays}/${trackedDays} days completed`
+              ? `${completedDays}/${trackedDays} answered days completed`
               : "no entries yet"}
           </span>
         </p>
@@ -47,9 +52,9 @@ export default function TaskProgressStrip({
       </div>
 
       <div className="mt-2">
-        <CompletionChart
+          <CompletionChart
           history={history}
-          dayCount={14}
+          dayCount={TASK_CHART_DAYS}
           height="h-12"
           label={`${task.title} completion history`}
           showAxis={false}
@@ -63,6 +68,7 @@ export default function TaskProgressStrip({
             type="button"
             disabled={busy}
             aria-pressed={today === "yes"}
+            aria-label={`Mark "${task.title}" done today`}
             onClick={() => onMarkToday?.(progress, "yes")}
             className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed ${today === "yes"
                 ? "border-emerald-500 bg-emerald-500 text-white"
@@ -75,6 +81,7 @@ export default function TaskProgressStrip({
             type="button"
             disabled={busy}
             aria-pressed={today === "no"}
+            aria-label={`Mark "${task.title}" not done today`}
             onClick={() => onMarkToday?.(progress, "no")}
             className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed ${today === "no"
                 ? "border-red-500 bg-red-500 text-white"

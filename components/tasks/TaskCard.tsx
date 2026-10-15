@@ -38,8 +38,8 @@ export default function TaskCard({
   progress: TaskProgress;
   /** Today's answer for this task (null = not marked yet). */
   todayStatus: DailyStatus | null;
-  /** Submits today's Yes/No for this task. */
-  onMarkToday: (task: Task, status: DailyStatus) => void;
+  /** Submits today's Yes/No for this task. Rejects if the write fails. */
+  onMarkToday: (task: Task, status: DailyStatus) => Promise<void>;
   /** True while a mutation on this row is in flight. */
   busy?: boolean;
 }) {
@@ -118,8 +118,15 @@ export default function TaskCard({
               </svg>
               {formatDueDate(task.due_at)}
             </span>
-            <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">
               {task.category}
+              {/* A recurring task is one action per day, not one per calendar
+                  entry, so say which day today's Yes/No applies to. */}
+              {repeats && todayStatus
+                ? ` · ${
+                    todayStatus === "yes" ? "done today" : "marked no for today"
+                  }`
+                : null}
             </span>
 
             {/* Recurrence hint, so a repeating task is identifiable at a glance. */}
@@ -166,7 +173,9 @@ export default function TaskCard({
             progress={progress}
             today={todayStatus}
             busy={busy}
-            onMarkToday={(_progress, status) => onMarkToday(task, status)}
+            onMarkToday={() =>
+              onMarkToday(task, todayStatus === "yes" ? "no" : "yes")
+            }
           />
         </div>
 

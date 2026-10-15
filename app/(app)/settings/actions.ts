@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import type { ProfileUpdate } from "@/types";
+import type { DisplayPreferences, ProfileUpdate, UserPreferences } from "@/types";
 
 // Result shape the form uses to show errors. Server actions can't throw in a
 // way the client can read, so we return a plain object instead.
@@ -10,16 +10,107 @@ export type UpdateProfileResult = {
   ok: boolean;
   message: string;
   /** Per-field errors, keyed by field name. */
-  fieldErrors?: Partial<Record<keyof ProfileUpdate, string>>;
+  fieldErrors?: Record<string, string>;
 };
+
+/**
+ * Saves the profile AND the preferences, which live in two tables.
+ *
+ * Profile data goes to `profiles`; the appearance and task-display preferences
+ * are written to both `profiles` (which the app shell already loads) and
+ * `user_preferences` (the canonical preference row). Both writes are reported:
+ * a half-applied save says so instead of claiming success.
+ */
+export async function updateSettings(input: {
+  profile: ProfileUpdate;
+  preferences: DisplayPreferences;
+}): Promise<UpdateProfileResult> {
+  const profileResult = await saveProfile(input.profile, input.preferences);
+  if (!profileResult.ok) return profileResult;
+
+  const preferencesResult = await savePreferences(input.preferences);
+  if (!preferencesResult.ok) {
+    return {
+      ok: false,
+      message:
+        "Your profile was saved, but the display preferences could not be. Please try again.",
+    };
+  }
+
+  revalidatePath("/", "layout");
+  return { ok: true, message: "Settings saved." };
+}
+
+/** Saves just the time format, which lives only on `user_preferences`. */
+export async function updateTimeFormat(
+  timeFormat: UserPreferences["time_format"],
+): Promise<UpdateProfileResult> {
+  if (timeFormat !== "12h" && timeFormat !== "24h") {
+    return { ok: false, message: "Choose a 12-hour or 24-hour clock." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, message: "Your session has expired. Please log in again." };
+  }
+
+  const { error } = await supabase
+    .from("user_preferences")
+    .upsert({ user_id: user.id, time_format: timeFormat }, { onConflict: "user_id" });
+
+  if (error) {
+    console.error("[DayForge] time format update failed:", error.message);
+    return { ok: false, message: "Could not save the time format. Please try again." };
+  }
+
+  revalidatePath("/", "layout");
+  return { ok: true, message: "Time format saved." };
+}
+
+/** Writes `user_preferences` (upsert, so a missing row is created). */
+async function savePreferences(
+  preferences: DisplayPreferences,
+): Promise<UpdateProfileResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, message: "Your session has expired. Please log in again." };
+  }
+
+  const { error } = await supabase.from("user_preferences").upsert(
+    {
+      user_id: user.id,
+      week_start: preferences.week_start,
+      default_category: preferences.default_task_category,
+      default_priority: preferences.default_task_priority,
+      show_completed_tasks: preferences.show_completed_tasks,
+    },
+    { onConflict: "user_id" },
+  );
+
+  if (error) {
+    console.error("[DayForge] preferences update failed:", error.message);
+    return { ok: false, message: "Could not save the display preferences." };
+  }
+
+  return { ok: true, message: "Preferences saved." };
+}
 
 // Saves the user's profile.
 //
 // Runs on the server, so the row is updated with the signed-in user's own
 // session - RLS then guarantees only their own row can change. We still pass an
 // explicit id filter as a second line of defence.
-export async function updateProfile(
+async function saveProfile(
   values: ProfileUpdate,
+  preferences: DisplayPreferences,
 ): Promise<UpdateProfileResult> {
   const supabase = await createClient();
 
@@ -56,22 +147,66 @@ export async function updateProfile(
     fieldErrors.semester = "That's too long (40 characters max).";
   }
 
+  // Preference validation. A client-side check can be bypassed, so it happens
+  // here too, before anything is written.
+  if (preferences.theme !== "light" && preferences.theme !== "dark" && preferences.theme !== "system") {
+    fieldErrors.theme = "Choose light, dark or system.";
+  }
+  if (preferences.week_start !== 0 && preferences.week_start !== 1) {
+    fieldErrors.week_start = "Week start must be Sunday or Monday.";
+  }
+  const defaultCategory = preferences.default_task_category?.trim() || null;
+  if (defaultCategory && defaultCategory.length > 60) {
+    fieldErrors.default_task_category = "That's too long (60 characters max).";
+  }
+  const defaultPriority = preferences.default_task_priority;
+  if (
+    defaultPriority !== null &&
+    defaultPriority !== "low" &&
+    defaultPriority !== "medium" &&
+    defaultPriority !== "high"
+  ) {
+    fieldErrors.default_task_priority = "Choose low, medium or high.";
+  }
+
   if (Object.keys(fieldErrors).length > 0) {
     return { ok: false, message: "Please fix the highlighted fields.", fieldErrors };
   }
 
-  const { error } = await supabase
+  const payload = {
+    ...trimmed,
+    theme: preferences.theme,
+    week_start: preferences.week_start,
+    default_task_category: defaultCategory,
+    default_task_priority: defaultPriority,
+    show_completed_tasks: preferences.show_completed_tasks,
+  };
+
+  // `.select()` so "no row matched" is distinguishable from success: without
+  // it an RLS-filtered update reports ok while changing nothing.
+  const { data: rows, error } = await supabase
     .from("profiles")
-    .update(trimmed)
-    .eq("id", user.id);
+    .update(payload)
+    .eq("id", user.id)
+    .select("id");
 
   if (error) {
-    console.error("[DayForge] profile update failed:", error.message);
-    return { ok: false, message: "Could not save your profile. Please try again." };
+    console.error("[DayForge] settings update failed:", error.message);
+    return { ok: false, message: "Could not save your settings. Please try again." };
   }
 
-  // The top bar reads the name from the server, so refresh the shell to show it.
-  revalidatePath("/", "layout");
+  if (!rows || rows.length === 0) {
+    // No profile row exists for this account (the signup trigger never ran), so
+    // create it rather than reporting a failure the user cannot act on.
+    const { error: insertError } = await supabase
+      .from("profiles")
+      .insert({ id: user.id, ...payload });
 
-  return { ok: true, message: "Profile saved." };
+    if (insertError) {
+      console.error("[DayForge] settings insert failed:", insertError.message);
+      return { ok: false, message: "Could not save your settings. Please try again." };
+    }
+  }
+
+  return { ok: true, message: "Settings saved." };
 }

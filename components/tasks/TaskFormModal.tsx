@@ -27,6 +27,7 @@ export default function TaskFormModal({
   onClose,
   onSubmit,
   task,
+  defaults,
 }: {
   open: boolean;
   onClose: () => void;
@@ -34,6 +35,19 @@ export default function TaskFormModal({
   onSubmit: (values: TaskInsert) => Promise<void>;
   /** When present, the form edits this task instead of creating one. */
   task?: Task | null;
+  /**
+   * Settings preferences, and an optional date to pre-fill.
+   *
+   * `onDate` is how the Calendar creates a task on the day the user clicked:
+   * a "YYYY-MM-DD" date lands in the due-date field at 09:00 local time, which
+   * is a real instant rather than a floating one, so it still sorts correctly
+   * against tasks with a specific time.
+   */
+  defaults?: {
+    category?: string | null;
+    priority?: TaskPriority | null;
+    onDate?: string | null;
+  };
 }) {
   const isEdit = Boolean(task);
 
@@ -56,15 +70,24 @@ export default function TaskFormModal({
     if (!open) return;
     setTitle(task?.title ?? "");
     setDescription(task?.description ?? "");
-    setDueAt(utcToLocalInput(task?.due_at ?? null));
-    setPriority(task?.priority ?? "medium");
-    setCategory(task?.category ?? "Personal");
+
+    // Edit mode wins; otherwise the Calendar's chosen day; otherwise empty.
+    if (task) {
+      setDueAt(utcToLocalInput(task.due_at));
+    } else if (defaults?.onDate) {
+      setDueAt(`${defaults.onDate}T09:00`);
+    } else {
+      setDueAt("");
+    }
+
+    setPriority(task?.priority ?? defaults?.priority ?? "medium");
+    setCategory(task?.category ?? defaults?.category ?? "Personal");
     setRecurrenceType(task?.recurrence_type ?? "none");
     setRecurrenceDays(task?.recurrence_days ?? []);
     setErrors({});
     setFormError(null);
     setPending(false);
-  }, [open, task]);
+  }, [open, task, defaults?.onDate, defaults?.priority, defaults?.category]);
 
   /** Adds or removes a weekday from the custom-days selection. */
   function toggleDay(day: number) {
@@ -108,6 +131,10 @@ export default function TaskFormModal({
       // The column is NULL unless the type is "custom" - the check constraint
       // requires a 1-7 element array containing only values 0-6 otherwise.
       recurrence_days: recurrenceType === "custom" ? recurrenceDays : null,
+      // Passed through so the hook can apply the user's saved defaults when the
+      // field is still at its untouched default (see createTask in useTasks).
+      default_category: defaults?.category ?? null,
+      default_priority: defaults?.priority ?? null,
     };
 
     try {

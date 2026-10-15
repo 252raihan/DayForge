@@ -22,7 +22,8 @@ export default function StatTile({
   tone = "default",
 }: {
   label: string;
-  value: number;
+  /** A number, or a short string when the tile reads better as "3/5". */
+  value: number | string;
   hint?: string;
   tone?: Tone;
 }) {
@@ -36,7 +37,9 @@ export default function StatTile({
           {value}
         </span>
       </div>
-      <p className={`mt-2 text-2xl font-semibold tracking-tight ${styles.value}`}>{value}</p>
+      <p className={`mt-2 text-2xl font-semibold tracking-tight ${styles.value}`}>
+        {value}
+      </p>
       {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
     </Card>
   );

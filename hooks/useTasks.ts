@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { HOME_SCOPE, isTaskEligibleToday, tasksInScope, type HomeScope } from "@/lib/home-scope";
 import type {
   DailyPoint,
   DailyStatus,
@@ -33,6 +34,20 @@ import type {
 /** The sort order applied before the user picks one. */
 export const DEFAULT_SORT: TaskSort = "due_date";
 
+/** Number of days the dashboard's daily-completion window covers. */
+export const DAILY_STATS_DAYS = 21;
+
+/**
+ * Orders two tasks for the recurrence roll-up: dated rows first, earliest
+ * first, undated last. Kept separate from `comparator` because it only ever
+ * needs "which occurrence is next", not the user's chosen sort.
+ */
+function dueRank(task: Task): number {
+  if (!task.due_at) return Number.POSITIVE_INFINITY;
+  const time = new Date(task.due_at).getTime();
+  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+}
+
 /** Priority rank used by the "priority" sort - high first. */
 const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 };
 
@@ -42,7 +57,15 @@ export const ALL_CATEGORIES = "__all__";
 /** Sentinel for "any status" in the status filter dropdown. */
 export const ALL_STATUSES = "__all__";
 
-export function useTasks() {
+export function useTasks(
+  scope: HomeScope = HOME_SCOPE,
+  options: { hideCompleted?: boolean } = {},
+) {
+  const hideCompleted = options.hideCompleted ?? false;
+
+  // Whole account, before the scope narrows it. Kept so callers can still show
+  // account-wide numbers, and so the scope never hides a row from a mutation.
+  const [allAccountTasks, setAllAccountTasks] = useState<Task[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   // Subtasks are kept in one flat list keyed by task id, because they are only
   // ever rendered grouped by task. One query loads every checklist at once.
@@ -121,7 +144,9 @@ export function useTasks() {
       return;
     }
 
-    setTasks((tasksResult.data as Task[]) ?? []);
+    const loadedTasks = (tasksResult.data as Task[]) ?? [];
+    setAllAccountTasks(loadedTasks);
+    setTasks(loadedTasks);
     setSubtasks((subtasksResult.data as SubTask[]) ?? []);
     setDailyLogs((dailyLogsResult.data as TaskDailyLog[]) ?? []);
     // Clear any previous failure so the banner disappears on a good reload.
@@ -134,24 +159,45 @@ export function useTasks() {
   }, [load]);
 
   /** Creates a task and prepends it, so the list updates without a refetch. */
-  const createTask = useCallback(async (values: TaskInsert) => {
-    const supabase = createClient();
+  const createTask = useCallback(
+    async (values: TaskInsert) => {
+      const supabase = createClient();
 
-    // user_id is omitted on purpose: the column defaults to auth.uid().
-    const { data, error } = await supabase
-      .from("tasks")
-      .insert(values)
-      .select()
-      .single();
+      // The Settings preferences arrive in the same payload, because two of
+      // them override columns the payload already carries: `category` and
+      // `priority` default to Personal/medium in the modal, so "use my
+      // default" is only knowable here. They are pulled out before the insert
+      // so PostgREST never sees a column that does not exist.
+      const { default_category, default_priority, ...columns } = values;
+      const payload: TaskInsert = {
+        ...columns,
+        category:
+          columns.category === "Personal" && default_category
+            ? default_category
+            : columns.category,
+        priority:
+          columns.priority === "medium" && default_priority
+            ? default_priority
+            : columns.priority,
+      };
 
-    if (error) {
-      console.error("[DayForge] failed to create task:", error.message);
-      throw new Error("Could not save the task. Please try again.");
-    }
+      // user_id is omitted on purpose: the column defaults to auth.uid().
+      const { data, error } = await supabase
+        .from("tasks")
+        .insert(payload)
+        .select()
+        .single();
 
-    setTasks((prev) => [data as Task, ...prev]);
-    return data as Task;
-  }, []);
+      if (error) {
+        console.error("[DayForge] failed to create task:", error.message);
+        throw new Error("Could not save the task. Please try again.");
+      }
+
+      setTasks((prev) => [data as Task, ...prev]);
+      return data as Task;
+    },
+    [],
+  );
 
   /**
    * Patches a task. Applied optimistically so the checkbox feels instant, and
@@ -160,13 +206,34 @@ export function useTasks() {
   const updateTask = useCallback(async (id: string, values: TaskUpdate) => {
     const supabase = createClient();
 
+    // Settings preferences are a create-time concern only; strip them so a
+    // stray field can never turn into an unknown-column error.
+    const { default_category: _c, default_priority: _p, ...patch } = values;
+
     let snapshot: Task | undefined;
     setTasks((prev) => {
       snapshot = prev.find((t) => t.id === id);
-      return prev.map((t) => (t.id === id ? { ...t, ...values } : t));
+      return prev.map((t) => (t.id === id ? { ...t, ...patch } : t));
     });
 
-    const { error } = await supabase.from("tasks").update(values).eq("id", id);
+    // .select() asks PostgREST to return the updated rows, which makes "no row
+    // matched" detectable: without it an update that RLS filtered out comes
+    // back as a success with zero rows changed, and the UI would show a saved
+    // state the database never stored.
+    const { data, error } = await supabase
+      .from("tasks")
+      .update(patch)
+      .eq("id", id)
+      .select("id");
+
+    if (!error && (!data || data.length === 0)) {
+      console.error("[DayForge] update matched no rows for task", id);
+      if (snapshot) {
+        const previous = snapshot;
+        setTasks((prev) => prev.map((t) => (t.id === id ? previous : t)));
+      }
+      throw new Error("Could not update the task. Please try again.");
+    }
 
     if (error) {
       console.error("[DayForge] failed to update task:", error.message);
@@ -194,6 +261,26 @@ export function useTasks() {
 
     const supabase = createClient();
 
+    // Idempotence check before the insert, so the expected "already exists"
+    // case never surfaces as a console error. The unique index on
+    // (recurrence_source_id, due_at) still runs after this - it is what makes
+    // the guarantee hold for two tabs racing - but a plain re-click now takes
+    // the cheap path.
+    const sourceId = task.recurrence_source_id ?? task.id;
+    const { data: existing, error: existingError } = await supabase
+      .from("tasks")
+      .select("id")
+      .eq("recurrence_source_id", sourceId)
+      .eq("due_at", nextDueAt)
+      .limit(1);
+
+    if (existingError) {
+      console.error("[DayForge] failed to check next occurrence:", existingError.message);
+      // Fall through to the insert: the unique index is still the real guard.
+    } else if (existing && existing.length > 0) {
+      return existing[0] as Task;
+    }
+
     // The new row points at the ORIGINAL task (recurrence_source_id), not at
     // this row, so every occurrence of a series shares one source. The unique
     // index is on (source, due_at) - a stable pair - which is exactly what makes
@@ -209,7 +296,7 @@ export function useTasks() {
         status: "todo" as const,
         recurrence_type: task.recurrence_type,
         recurrence_days: task.recurrence_days,
-        recurrence_source_id: task.recurrence_source_id ?? task.id,
+        recurrence_source_id: sourceId,
       })
       .select()
       .single();
@@ -223,6 +310,7 @@ export function useTasks() {
     }
 
     setTasks((prev) => [data as Task, ...prev]);
+    return data as Task;
   }, []);
 
   /**
@@ -240,10 +328,19 @@ export function useTasks() {
       await updateTask(task.id, { status: nextStatus });
 
       if (nextStatus === "done") {
-        await spawnNextOccurrence(task);
+        // Only the open occurrence of a series creates the next one, so
+        // ticking off a task that already has a later occurrence is a plain
+        // status change rather than another insert attempt.
+        const hasLater = tasks.some(
+          (other) =>
+            other.id !== task.id &&
+            (other.recurrence_source_id ?? null) ===
+              (task.recurrence_source_id ?? task.id),
+        );
+        if (!hasLater) await spawnNextOccurrence(task);
       }
     },
-    [updateTask, spawnNextOccurrence],
+    [updateTask, spawnNextOccurrence, tasks],
   );
 
   /** Deletes a task, removing it locally only after the server confirms. */
@@ -293,6 +390,7 @@ export function useTasks() {
     setSubtasks((prev) => [...prev, data as SubTask]);
   }, []);
 
+  /** Ticks a subtask on or off, optimistically. */
   /** Ticks a subtask on or off, optimistically. */
   const toggleSubtask = useCallback(async (subtask: SubTask) => {
     const supabase = createClient();
@@ -347,6 +445,7 @@ export function useTasks() {
     async (task: Task, status: DailyStatus, date: string = todayKey()) => {
       const supabase = createClient();
       const completed = status === "yes";
+      const isToday = date === todayKey();
 
       // Replace any existing row for this task/day so the optimistic state and
       // the upsert agree even when the user flips Yes -> No.
@@ -395,9 +494,34 @@ export function useTasks() {
         ...prev.filter((log) => !(log.task_id === task.id && log.log_date === date)),
         saved,
       ]);
+
+      // Answering "Yes" for today also settles the task itself, so the
+      // checkbox, the tabs, the dashboard tiles and the charts all move
+      // together instead of the log saying "done" while the task says "todo".
+      //
+      // Both writes are conditional:
+      //   - only while the task is still open, so re-confirming or correcting
+      //     an answer does not undo a completion the user made themselves;
+      //   - only for a recurring task when no later occurrence exists yet, so
+      //     flipping Yes -> No -> Yes cannot stack up duplicate occurrences
+      //     (the (source, due_at) unique index is the backstop).
+      if (isToday && completed && task.status !== "done") {
+        await updateTask(task.id, { status: "done" });
+
+        if (isRecurring(task)) {
+          const hasLater = tasks.some(
+            (other) =>
+              other.id !== task.id &&
+              (other.recurrence_source_id ?? null) ===
+                (task.recurrence_source_id ?? task.id),
+          );
+          if (!hasLater) await spawnNextOccurrence(task);
+        }
+      }
+
       return saved;
     },
-    [],
+    [spawnNextOccurrence, tasks, updateTask],
   );
 
   // --- Derived state ------------------------------------------------------
@@ -440,6 +564,19 @@ export function useTasks() {
   }, [dailyLogs]);
 
   /**
+   * The daily figures the Dashboard shows: one value per calendar day, built
+   * only from the eligible tasks in scope.
+   *
+   *   total   = tasks eligible that day
+   *   yes     = eligible tasks marked "Yes" that day
+   *   percent = yes / (yes + no), and null when nothing was answered
+   *
+   * The denominator is the ANSWERED set, not the eligible set, on purpose: a
+   * day the user has not reached yet, or one where nothing was eligible, must
+   * not be reported as a failure. A day with eligible tasks but no answers is a
+   * real gap, so it is reported with total > 0 and yes + no === 0.
+   */
+  /**
    * Per-task history and consistency numbers, for the progress charts.
    * Built from the same flat log list, so a card, the dashboard chart and the
    * headline tiles can never disagree about a percentage.
@@ -454,25 +591,143 @@ export function useTasks() {
   }, [tasks, dailyLogsByTask]);
 
   /**
+   * Recurring tasks roll up into one row per series.
+   *
+   * Completing a weekly lecture creates next week's occurrence, so without this
+   * every occurrence would appear as its own task and today's percentage would
+   * be diluted by rows about other weeks. The OPEN occurrence represents the
+   * series (that is the one you can act on); if the whole series is finished,
+   * the newest occurrence stands in, so the history and the charts still have a
+   * row to hang off. Nothing is merged in the database - this is a read-time
+   * view, so no history is ever lost.
+   */
+  const seriesTasks = useMemo(() => {
+    const groups = new Map<string, Task[]>();
+    const singles: Task[] = [];
+
+    for (const task of tasks) {
+      const key = task.recurrence_source_id;
+      if (!key) {
+        singles.push(task);
+        continue;
+      }
+      const group = groups.get(key);
+      if (group) group.push(task);
+      else groups.set(key, [task]);
+    }
+
+    const representatives = Array.from(groups.values()).map((group) => {
+      const open = group
+        .filter((task) => task.status !== "done")
+        .sort((a, b) => dueRank(a) - dueRank(b));
+      if (open.length > 0) return open[0];
+      return [...group].sort((a, b) => dueRank(b) - dueRank(a))[0];
+    });
+
+    return [...singles, ...representatives].sort(comparator(sort));
+  }, [tasks, sort]);
+
+  const seriesIds = useMemo(
+    () => new Set(seriesTasks.map((task) => task.id)),
+    [seriesTasks],
+  );
+
+  /**
    * Today's answer for every task, already shaped for the panel: answered ones
    * keep their "yes"/"no", unanswered ones are null.
    */
+  /**
+   * A task's history, widened to cover every occurrence of the same series.
+   *
+   * `buildProgress` reads one task id, but a series' history is spread across
+   * its occurrences: a weekly task completed last week has its log on last
+   * week's row. Merging here is what lets the chart and the percentage show the
+   * real streak across occurrences instead of only ever counting the newest one.
+   */
+  const historyForTask = useCallback(
+    (task: Task) => {
+      const sourceId = task.recurrence_source_id;
+      if (!sourceId) return dailyLogsByTask.get(task.id) ?? [];
+
+      const merged: TaskDailyLog[] = [];
+      const seenDates = new Set<string>();
+
+      for (const candidate of tasks) {
+        if (candidate.id !== sourceId && candidate.recurrence_source_id !== sourceId) {
+          continue;
+        }
+        for (const log of dailyLogsByTask.get(candidate.id) ?? []) {
+          // Ascending order means the earliest row for a date is kept, so a
+          // duplicated date can never be double-counted.
+          if (seenDates.has(log.log_date)) continue;
+          seenDates.add(log.log_date);
+          merged.push(log);
+        }
+      }
+
+      for (const log of dailyLogsByTask.get(task.id) ?? []) {
+        if (seenDates.has(log.log_date)) continue;
+        seenDates.add(log.log_date);
+        merged.push(log);
+      }
+
+      return merged.sort((a, b) => a.log_date.localeCompare(b.log_date));
+    },
+    [tasks, dailyLogsByTask],
+  );
+
+  /**
+   * Today's answer for a recurring task is answered on whichever occurrence of
+   * the series was already logged today - typically the previous occurrence,
+   * because that is the row the shared Yes/No button writes to.
+   */
+  const seriesMemberIds = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const task of tasks) {
+      if (!task.recurrence_source_id) continue;
+      const list = map.get(task.recurrence_source_id);
+      if (list) list.push(task.id);
+      else map.set(task.recurrence_source_id, [task.id]);
+    }
+    return map;
+  }, [tasks]);
+
   const todayProgress = useMemo<TodayTaskProgress[]>(
     () =>
-      tasks.map((task) => {
-        const logs = dailyLogsByTask.get(task.id) ?? [];
+      seriesTasks.map((task) => {
+        const logs = historyForTask(task);
         const base = buildProgress(task, logs);
-        return { ...base, today: todayStatusByTask.get(task.id) ?? null };
+
+        let today = todayStatusByTask.get(task.id) ?? null;
+        if (today === null && task.recurrence_source_id) {
+          for (const memberId of seriesMemberIds.get(task.recurrence_source_id) ?? []) {
+            const memberToday = todayStatusByTask.get(memberId);
+            if (memberToday) {
+              today = memberToday;
+              break;
+            }
+          }
+        }
+
+        return { ...base, today };
       }),
-    [tasks, dailyLogsByTask, todayStatusByTask],
+    [seriesTasks, seriesMemberIds, historyForTask, todayStatusByTask],
   );
 
   /** Every category in use, for the category filter dropdown. */
+  // Scoped to the visible list, so a course-labelled category never appears in
+  // the dropdown of a home-scoped page.
   const categories = useMemo(() => {
     const set = new Set<string>();
     for (const task of tasks) set.add(task.category);
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [tasks]);
+
+  /** The tasks eligible for the daily question, in scope: the percentage base. */
+  const eligible = useMemo(
+    () => tasks.filter(isTaskEligibleToday),
+    [tasks],
+  );
 
   /**
    * The list once search, filters and sort are applied, but BEFORE the tab is
@@ -482,7 +737,9 @@ export function useTasks() {
   const searched = useMemo(() => {
     const needle = debouncedSearch.trim().toLowerCase();
 
-    const matched = tasks.filter((task) => {
+    // Scope first, then search/filter/sort. Applying it here (rather than only
+    // when rendering) is what keeps the tab counts and the empty states honest.
+    const matched = tasksInScope(tasks, scope).filter((task) => {
       // Search covers title and description together.
       if (needle) {
         const haystack = `${task.title} ${task.description ?? ""}`.toLowerCase();
@@ -496,24 +753,121 @@ export function useTasks() {
 
     // Sort a copy - Array.prototype.sort mutates.
     return [...matched].sort(comparator(sort));
-  }, [tasks, debouncedSearch, priority, category, status, sort]);
+  }, [tasks, scope, debouncedSearch, priority, category, status, sort]);
+
+  /**
+   * The daily figures the Dashboard shows: one value per calendar day, built
+   * only from the eligible tasks in scope.
+   *
+   *   total   = tasks eligible that day
+   *   yes     = eligible tasks marked "Yes" that day
+   *   percent = yes / (yes + no), and null when nothing was answered
+   *
+   * The denominator is the ANSWERED set, not the eligible set, on purpose: a
+   * day the user has not reached yet, or one where nothing was eligible, must
+   * not be reported as a failure. A day with eligible tasks but no answers is a
+   * real gap, so it is reported with total > 0 and yes + no === 0.
+   */
+  const dailyStats = useMemo(() => {
+    const days = recentDayKeys(DAILY_STATS_DAYS);
+
+    // Resolved once per task rather than once per task per day: the window is
+    // three weeks, and resolving inside the loop below would re-walk a series
+    // for every date it appears on.
+    const historyByTask = eligible.map((task) => historyForTask(task));
+
+    const points = days.map((date) => {
+      let total = 0;
+      let yes = 0;
+      let no = 0;
+
+      eligible.forEach((task, index) => {
+        // A task is only eligible from the day it was due (or today, when it
+        // has no due date). Counting it on earlier days would invent history.
+        if (task.due_at) {
+          const due = new Date(task.due_at);
+          if (!Number.isNaN(due.getTime()) && todayKey(due) > date) return;
+        }
+
+        total += 1;
+
+        const log = historyByTask[index].find((entry) => entry.log_date === date);
+        if (!log) return;
+        if (log.completed) yes += 1;
+        else no += 1;
+      });
+
+      const answered = yes + no;
+      return {
+        date,
+        total,
+        yes,
+        no,
+        answered,
+        percent: answered === 0 ? null : Math.round((yes / answered) * 100),
+      };
+    });
+
+    const today = points[points.length - 1];
+    const answeredPoints = points.filter((point) => point.answered > 0);
+    const answeredYes = answeredPoints.reduce((sum, point) => sum + point.yes, 0);
+    const answeredNo = answeredPoints.reduce((sum, point) => sum + point.no, 0);
+
+    return {
+      points,
+      today,
+      /** Eligible tasks in scope right now. */
+      eligibleOpen: eligible.length,
+      /** Days with eligible tasks but no answer at all - gaps, not failures. */
+      unansweredDays: points.filter((point) => point.total > 0 && point.answered === 0)
+        .length,
+      /** Percentage across every answered day in the window. */
+      windowPercent:
+        answeredYes + answeredNo === 0
+          ? null
+          : Math.round((answeredYes / (answeredYes + answeredNo)) * 100),
+      windowAnsweredDays: answeredPoints.length,
+    };
+  }, [eligible, historyForTask]);
+
+  // The list with recurring series collapsed to one row each, so a weekly task
+  // does not appear once per week it has ever occurred.
+  const rolledUp = useMemo(
+    () => searched.filter((task) => seriesIds.has(task.id)),
+    [searched, seriesIds],
+  );
+
+  /**
+   * Applies the user's "show completed tasks" preference to the list.
+   *
+   * An explicit status filter ("done", or any other) means the user has said
+   * what they want to see right now, so the preference stands aside rather than
+   * silently hiding rows they just asked for.
+   */
+  const afterPreferences = useMemo(
+    () =>
+      hideCompleted && status === ALL_STATUSES
+        ? rolledUp.filter((task) => task.status !== "done")
+        : rolledUp,
+    [rolledUp, hideCompleted, status],
+  );
 
   // The visible list for the active tab.
   const filteredTasks = useMemo(
-    () => searched.filter((task) => matchesFilter(task, filter)),
-    [searched, filter],
+    () => afterPreferences.filter((task) => matchesFilter(task, filter)),
+    [afterPreferences, filter],
   );
 
   // Counts per tab, over the searched/filtered set, so they add up to what the
   // user can actually see.
   const counts = useMemo(
     () => ({
-      today: searched.filter((t) => matchesFilter(t, "today")).length,
-      upcoming: searched.filter((t) => matchesFilter(t, "upcoming")).length,
-      overdue: searched.filter((t) => matchesFilter(t, "overdue")).length,
-      all: searched.length,
+      today: afterPreferences.filter((t) => matchesFilter(t, "today")).length,
+      upcoming: afterPreferences.filter((t) => matchesFilter(t, "upcoming")).length,
+      overdue: afterPreferences.filter((t) => matchesFilter(t, "overdue")).length,
+      all: afterPreferences.length,
     }),
-    [searched],
+    [afterPreferences],
   );
 
   /** True when the toolbar is narrowing the list in some way. */
@@ -532,10 +886,15 @@ export function useTasks() {
     setStatus(ALL_STATUSES);
   }, []);
 
+
   return {
     // Data
+    // `tasks` is the visible list: the scope first, recurring series collapsed,
+    // then the tab, then the toolbar. Everything derived below is built from the
+    // same set, so the list, the tabs, the counts and the charts always agree.
     tasks: filteredTasks,
-    allTasks: tasks,
+    allTasks: tasksInScope(tasks, scope),
+    accountTasks: allAccountTasks,
     subtasksByTask,
     counts,
     categories,
@@ -547,6 +906,12 @@ export function useTasks() {
     todayStatusByTask,
     progressByTask,
     todayProgress,
+    dailyStats,
+    seriesTasks,
+    seriesIds,
+    historyForTask,
+    eligibleTasks: eligible,
+    scopeTasks: tasksInScope(allAccountTasks, scope),
     submitDailyStatus,
 
     // Tab
@@ -566,6 +931,7 @@ export function useTasks() {
     setSort,
     hasActiveRefinements,
     clearRefinements,
+    hideCompleted,
 
     // Task mutations
     reload: load,

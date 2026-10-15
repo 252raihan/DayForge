@@ -7,6 +7,7 @@ import TodayTasksPanel from "@/components/dashboard/TodayTasksPanel";
 import CompletionChart from "@/components/dashboard/CompletionChart";
 import { useTasks, matchesFilter } from "@/hooks/useTasks";
 import { CardHeader } from "@/components/ui/Card";
+import { HOME_SCOPE } from "@/lib/home-scope";
 import type { DailyStatus, DailyPoint, Task, TaskFilter, TodayTaskProgress } from "@/types";
 
 // How many rows the dashboard shows before linking off to the full Tasks page.
@@ -34,7 +35,10 @@ export default function DashboardTasks({ initialTasks }: { initialTasks: Task[] 
     setFilter,
     todayProgress,
     submitDailyStatus,
-  } = useTasks();
+    dailyStats,
+    scopeTasks,
+    eligibleTasks,
+  } = useTasks(HOME_SCOPE);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   // Prefer the seeded rows until the client fetch resolves, so the first render
@@ -48,23 +52,44 @@ export default function DashboardTasks({ initialTasks }: { initialTasks: Task[] 
     [todayProgress],
   );
 
-  // The overall daily-completion picture across every task: each task's most
-  // recent answer becomes one bar, so the dashboard shows productivity at a
-  // glance without opening each task.
-  const overallHistory = useMemo<DailyPoint[]>(() => {
-    const byDate = new Map<string, DailyPoint>();
-    for (const progress of todayProgress) {
-      for (const point of progress.history) byDate.set(point.date, point);
-    }
-    return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
-  }, [todayProgress]);
+  // The overall daily-completion picture across every eligible task in scope,
+  // one bar per calendar day. Built from the same persisted logs the per-task
+  // charts and the tiles use, so the three can never disagree.
+  const overallHistory = useMemo<DailyPoint[]>(
+    () => dailyStats.points.map((point) => ({ date: point.date, completed: point.percent === 100 })),
+    [dailyStats],
+  );
 
-  const overallRate = useMemo(() => {
-    const answered = todayProgress.filter((p) => p.today !== null);
-    if (answered.length === 0) return 0;
-    const yes = answered.filter((p) => p.today === "yes").length;
-    return Math.round((yes / answered.length) * 100);
-  }, [todayProgress]);
+  /**
+   * Today's rate, with an explicit rule:
+   *   answered today = tasks given a Yes or a No today
+   *   rate           = yes / answered
+   *
+   * The denominator is the ANSWERED set, not every open task: a task nobody has
+   * answered yet is not a failure. This matches the daily chart, which uses the
+   * same rule per day.
+   */
+  const todayStats = dailyStats.today;
+  const overallRate = todayStats?.percent ?? null;
+
+  // This week vs last week, from the same daily points. Both halves use the
+  // same denominator, so the comparison is like for like.
+  const weekTrend = useMemo(() => {
+    const points = dailyStats.points;
+    const make = (slice: typeof points) => {
+      const yes = slice.reduce((sum, point) => sum + point.yes, 0);
+      const no = slice.reduce((sum, point) => sum + point.no, 0);
+      return {
+        yes,
+        no,
+        percent: yes + no === 0 ? null : Math.round((yes / (yes + no)) * 100),
+      };
+    };
+    return {
+      thisWeek: make(points.slice(-7)),
+      lastWeek: make(points.slice(-14, -7)),
+    };
+  }, [dailyStats]);
 
   async function handleDailySubmit(task: TodayTaskProgress, status: DailyStatus) {
     setBusyId(task.task.id);
@@ -87,6 +112,10 @@ export default function DashboardTasks({ initialTasks }: { initialTasks: Task[] 
       open: open.length,
     };
   }, [rows]);
+
+  // Days in the window with tasks but no answer yet. Shown as a prompt, never as
+  // a failure: an unanswered day is a gap, not a missed one.
+  const unansweredDays = dailyStats.unansweredDays;
 
   // What to show in the panel: whatever tab is active, capped to MAX_ROWS.
   // Same predicate as the counts above and as the Tasks page.
@@ -133,16 +162,27 @@ export default function DashboardTasks({ initialTasks }: { initialTasks: Task[] 
         busyId={busyId}
       />
 
-      {/* Daily completion across all tasks: one chart, plus today's rate. */}
+      {/* Daily completion across the tasks in scope: one chart, plus today's
+          rate, the week comparison and the unanswered-day prompt. */}
       <section className="rounded-2xl border border-border bg-surface p-5">
         <CardHeader
           title="Daily completion"
           action={
             <span className="text-xs font-semibold text-muted">
-              {overallRate}% today
+              {overallRate === null
+                ? "Nothing answered today"
+                : `${overallRate}% today`}
             </span>
           }
         />
+
+        {/* The calculation, stated plainly, with the denominator in words. */}
+        <p className="mb-3 text-xs text-muted">
+          Today: {todayStats?.yes ?? 0} yes and {todayStats?.no ?? 0} no out of{" "}
+          {todayStats?.total ?? 0} open task{(todayStats?.total ?? 0) === 1 ? "" : "s"}.
+          The percentage is over the days you answered.
+        </p>
+
         <p className="mb-3 text-xs text-muted">
           <span className="mr-3 inline-flex items-center gap-1.5">
             <span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500" /> Yes
@@ -154,12 +194,52 @@ export default function DashboardTasks({ initialTasks }: { initialTasks: Task[] 
             <span className="inline-block h-2.5 w-2.5 rounded-sm bg-border" /> Not answered
           </span>
         </p>
+
         <CompletionChart
           history={overallHistory}
           dayCount={21}
           height="h-24"
           label="Overall daily completion"
         />
+
+        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border pt-3 text-xs">
+          <span>
+            <span className="text-muted">This week: </span>
+            <span className="font-semibold">
+              {weekTrend.thisWeek.percent === null
+                ? "no answers"
+                : `${weekTrend.thisWeek.percent}%`}
+            </span>
+            <span className="text-muted">
+              {" "}({weekTrend.thisWeek.yes} yes / {weekTrend.thisWeek.no} no)
+            </span>
+          </span>
+
+          <span>
+            <span className="text-muted">Last week: </span>
+            <span className="font-semibold">
+              {weekTrend.lastWeek.percent === null
+                ? "no answers"
+                : `${weekTrend.lastWeek.percent}%`}
+            </span>
+          </span>
+
+          <span className="text-muted">
+            {dailyStats.eligibleOpen} open task
+            {dailyStats.eligibleOpen === 1 ? "" : "s"} counted
+            {scopeTasks.length > eligibleTasks.length
+              ? ` · ${scopeTasks.length - eligibleTasks.length} finished`
+              : ""}
+          </span>
+        </div>
+
+        {/* Unanswered days are surfaced as something to do, not as a failure. */}
+        {unansweredDays > 0 ? (
+          <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+            {unansweredDays} day{unansweredDays === 1 ? "" : "s"} in the last three weeks
+            had open tasks but no answer. Those days are not counted as misses.
+          </p>
+        ) : null}
       </section>
 
       {/* Headline numbers. */}
