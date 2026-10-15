@@ -1,6 +1,7 @@
 "use client";
 
 import { recentDayKeys, alignHistoryToDays } from "@/hooks/useTasks";
+import { formatShortDay } from "@/lib/calendar-utils";
 import type { DailyPoint } from "@/types";
 
 // A compact daily-completion bar chart, one bar per calendar day.
@@ -49,7 +50,7 @@ export default function CompletionChart({
       >
         {aligned.map((point, index) => {
           const date = dayKeys[index];
-          const short = shortDay(date);
+          const short = formatShortDay(date);
           const title = point
             ? `${short}: ${point.completed ? "Yes, completed" : "No, missed"}`
             : `${short}: not answered`;
@@ -82,17 +83,10 @@ export default function CompletionChart({
 
       {showAxis ? (
         <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted">
-          <span>{shortDay(dayKeys[0])}</span>
+          <span>{formatShortDay(dayKeys[0])}</span>
           <span>Today</span>
         </div>
       ) : null}
     </div>
   );
-}
-
-/** "2026-10-14" -> "14 Oct" (parsed as local, not UTC). */
-function shortDay(key: string): string {
-  const [year, month, day] = key.split("-").map(Number);
-  const date = new Date(year, month - 1, day);
-  return date.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }

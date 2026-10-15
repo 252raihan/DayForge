@@ -57,6 +57,32 @@ export const ALL_CATEGORIES = "__all__";
 /** Sentinel for "any status" in the status filter dropdown. */
 export const ALL_STATUSES = "__all__";
 
+// ---------------------------------------------------------------------------
+// Error diagnostics
+// ---------------------------------------------------------------------------
+// Supabase/PostgREST errors carry more than a message: a stable Postgres or
+// PostgREST `code`, plus optional details/hint. Logging all four at the point
+// of failure is what makes a database-side problem diagnosable from the browser
+// console without exposing any secrets - these fields are error metadata, not
+// credentials or user data. The user-facing message stays friendly; the raw
+// shape goes to the console only.
+function logSupabaseError(scope: string, error: unknown): void {
+  const err = error as { code?: string; message?: string; details?: string | null; hint?: string | null };
+  console.error(
+    `[DayForge] ${scope} failed:`,
+    JSON.stringify(
+      {
+        code: err?.code ?? null,
+        message: err?.message ?? null,
+        details: err?.details ?? null,
+        hint: err?.hint ?? null,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 export function useTasks(
   scope: HomeScope = HOME_SCOPE,
   options: { hideCompleted?: boolean } = {},
@@ -227,7 +253,14 @@ export function useTasks(
       .select("id");
 
     if (!error && (!data || data.length === 0)) {
-      console.error("[DayForge] update matched no rows for task", id);
+      // Zero rows from an update means the WHERE (or RLS) filtered everything
+      // out - almost always a stale or missing session, since the id came from
+      // a row this user loaded. Logged verbatim so the cause is identifiable.
+      console.error(
+        `[DayForge] update matched no rows for task ${id}.\n` +
+          `  code: none (zero rows returned)\n` +
+          `  likely cause: the session has expired or the row is no longer visible to this user (RLS). Try signing in again.`,
+      );
       if (snapshot) {
         const previous = snapshot;
         setTasks((prev) => prev.map((t) => (t.id === id ? previous : t)));
@@ -236,7 +269,9 @@ export function useTasks(
     }
 
     if (error) {
-      console.error("[DayForge] failed to update task:", error.message);
+      // The full Postgres error shape (code/details/hint) goes to the console
+      // before the friendly message is thrown, so the real cause is visible.
+      logSupabaseError("update task", error);
       // Restore the previous row.
       if (snapshot) {
         const previous = snapshot;
@@ -467,17 +502,103 @@ export function useTasks(
         return [...withoutToday, optimistic];
       });
 
-      const { data, error } = await supabase
+      // Update-then-insert instead of a single ON CONFLICT upsert. The upsert
+      // requires a unique index on (task_id, log_date); if that index has not
+      // been applied to the live database yet, Postgres rejects the whole
+      // statement at plan time with SQLSTATE 42P10 - which made every Yes/No
+      // click fail with "Could not save today's status". Reading first and
+      // choosing UPDATE or INSERT does not depend on the index, so it works
+      // either way (once the index exists, it still guarantees one row per
+      // task/day against racing tabs).
+      const { data: existingRow, error: readError } = await supabase
         .from("task_daily_logs")
-        .upsert(
-          { task_id: task.id, log_date: date, completed },
-          { onConflict: "task_id,log_date" },
-        )
-        .select()
-        .single();
+        .select("id")
+        .eq("task_id", task.id)
+        .eq("log_date", date)
+        .limit(1)
+        .maybeSingle();
+
+      const write = existingRow
+        ? supabase
+            .from("task_daily_logs")
+            .update({ completed })
+            .eq("id", existingRow.id)
+            .select()
+            .single()
+        : supabase
+            .from("task_daily_logs")
+            .insert({ task_id: task.id, log_date: date, completed, user_id: task.user_id })
+            .select()
+            .single();
+
+      const { data, error } = await write;
+
+      if (readError) {
+        logSupabaseError("submit daily status (read)", readError);
+      }
+
+      // Swap the optimistic row for the real one the server returned, then
+      // settle the task itself (shared by the race-retry path below).
+      const finish = async (savedRow: TaskDailyLog) => {
+        const saved = savedRow;
+        setDailyLogs((prev) => [
+          ...prev.filter((log) => !(log.task_id === task.id && log.log_date === date)),
+          saved,
+        ]);
+
+        if (isToday && completed && task.status !== "done") {
+          await updateTask(task.id, { status: "done" });
+
+          if (isRecurring(task)) {
+            const hasLater = tasks.some(
+              (other) =>
+                other.id !== task.id &&
+                (other.recurrence_source_id ?? null) ===
+                  (task.recurrence_source_id ?? task.id),
+            );
+            if (!hasLater) await spawnNextOccurrence(task);
+          }
+        }
+
+        return saved;
+      };
 
       if (error) {
-        console.error("[DayForge] failed to submit daily status:", error.message);
+        // 23505 = unique_violation. With the (task_id, log_date) index in
+        // place, this is what two tabs racing to insert the same task/day
+        // looks like: the row exists, so retry it as an UPDATE instead of
+        // surfacing a failure.
+        if (isUniqueViolation(error) && !existingRow) {
+          const retry = await supabase
+            .from("task_daily_logs")
+            .update({ completed })
+            .eq("task_id", task.id)
+            .eq("log_date", date)
+            .select()
+            .single();
+          if (!retry.error) {
+            return finish(retry.data as TaskDailyLog);
+          }
+        }
+        // 23503 = foreign_key_violation. If the live schema lacks the
+        // (id, user_id) unique constraint the composite FK needs, inserting
+        // with an explicit user_id fails while the trigger-stamped path
+        // would not. Retry once without the column so the write still lands.
+        if ((error as { code?: string }).code === "23503" && !existingRow) {
+          const retry = await supabase
+            .from("task_daily_logs")
+            .insert({ task_id: task.id, log_date: date, completed })
+            .select()
+            .single();
+          if (!retry.error) {
+            return finish(retry.data as TaskDailyLog);
+          }
+        }
+        // The full Postgres error shape goes to the console first: for the
+        // write this is where 42501 (an RLS rejection) or 23505 (a duplicate
+        // insert racing another tab, once the unique index exists) shows up
+        // verbatim.
+        logSupabaseError("submit daily status", error);
         // Roll back to exactly what the server still holds.
         setDailyLogs((prev) => {
           const withoutToday = prev.filter(
@@ -489,37 +610,7 @@ export function useTasks(
       }
 
       // Swap the optimistic row for the real one the server returned.
-      const saved = data as TaskDailyLog;
-      setDailyLogs((prev) => [
-        ...prev.filter((log) => !(log.task_id === task.id && log.log_date === date)),
-        saved,
-      ]);
-
-      // Answering "Yes" for today also settles the task itself, so the
-      // checkbox, the tabs, the dashboard tiles and the charts all move
-      // together instead of the log saying "done" while the task says "todo".
-      //
-      // Both writes are conditional:
-      //   - only while the task is still open, so re-confirming or correcting
-      //     an answer does not undo a completion the user made themselves;
-      //   - only for a recurring task when no later occurrence exists yet, so
-      //     flipping Yes -> No -> Yes cannot stack up duplicate occurrences
-      //     (the (source, due_at) unique index is the backstop).
-      if (isToday && completed && task.status !== "done") {
-        await updateTask(task.id, { status: "done" });
-
-        if (isRecurring(task)) {
-          const hasLater = tasks.some(
-            (other) =>
-              other.id !== task.id &&
-              (other.recurrence_source_id ?? null) ===
-                (task.recurrence_source_id ?? task.id),
-          );
-          if (!hasLater) await spawnNextOccurrence(task);
-        }
-      }
-
-      return saved;
+      return finish(data as TaskDailyLog);
     },
     [spawnNextOccurrence, tasks, updateTask],
   );

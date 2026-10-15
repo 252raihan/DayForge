@@ -8,11 +8,12 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test": "node --import ./tests/loader-register.mjs --test tests/*.test.mjs",
     "check:db": "node scripts/check-supabase.mjs"
   },
   "imports": {
-    "#/*": "./*"
+    "#/*": "./*",
+    "@/*": "./*"
   },
   "dependencies": {
     "@supabase/server": "^1.9.1",

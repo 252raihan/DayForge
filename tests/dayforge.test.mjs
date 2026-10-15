@@ -27,7 +27,7 @@ import {
   todayKey,
   utcToLocalInput,
 } from "../hooks/useTasks.ts";
-import { parseTags } from "../components/notes/NoteEditor.tsx";
+import { parseTags } from "../lib/note-utils.ts";
 import { monthGrid, shiftDays, shiftMonth, taskDayKey, weekGrid } from "../lib/calendar-utils.ts";
 import { buildHabitStats, currentStreak, isScheduledOn } from "../lib/habit-utils.ts";
 import {

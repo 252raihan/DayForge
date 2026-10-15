@@ -365,7 +365,7 @@ export default function TasksPage() {
         {!preferences.show_completed_tasks && status !== ALL_STATUSES ? (
           <p className="text-xs text-muted">
             Completed tasks are shown because a status filter is active. Clear it to
-            respect your "show completed tasks" setting.
+            respect your &ldquo;show completed tasks&rdquo; setting.
           </p>
         ) : null}
       </div>

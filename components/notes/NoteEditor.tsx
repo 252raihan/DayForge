@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FormMessage } from "@/components/ui/Form";
+import {
+  AUTOSAVE_DELAY_MS,
+  draftFromNote,
+  draftsEqual,
+  parseTags,
+  type NoteDraft,
+} from "@/lib/note-utils";
 import type { Note, Task } from "@/types";
+
+export type { NoteDraft };
 
 // The note editor: title, body, course/category, tags and an optional link to
 // one task, with debounced autosave.
@@ -18,54 +27,7 @@ import type { Note, Task } from "@/types";
 //   - The newest editor state is mirrored into a ref so the unmount handler and
 //     the beforeunload guard read the current draft rather than a stale closure.
 
-/** How long to wait after the last edit before saving. */
-const AUTOSAVE_DELAY_MS = 800;
 
-export type NoteDraft = {
-  title: string;
-  content: string;
-  category: string;
-  tags: string[];
-  pinned: boolean;
-  taskId: string | null;
-};
-
-export function draftFromNote(note: Note): NoteDraft {
-  return {
-    title: note.title,
-    content: note.content,
-    category: note.category ?? "",
-    tags: note.tags ?? [],
-    pinned: note.pinned,
-    taskId: note.task_id,
-  };
-}
-
-/** True when two drafts hold the same content (tag order included). */
-export function draftsEqual(a: NoteDraft, b: NoteDraft): boolean {
-  return (
-    a.title === b.title &&
-    a.content === b.content &&
-    a.category === b.category &&
-    a.pinned === b.pinned &&
-    a.taskId === b.taskId &&
-    a.tags.length === b.tags.length &&
-    a.tags.every((tag, index) => tag === b.tags[index])
-  );
-}
-
-/** Turns a comma-separated tag input into the array the database expects. */
-export function parseTags(input: string): string[] {
-  const seen = new Set<string>();
-  const tags: string[] = [];
-  for (const raw of input.split(",")) {
-    const tag = raw.trim().toLowerCase().replace(/^#/, "");
-    if (!tag || seen.has(tag)) continue;
-    seen.add(tag);
-    tags.push(tag);
-  }
-  return tags;
-}
 
 export default function NoteEditor({
   note,

@@ -8,10 +8,37 @@ Built with **Next.js (App Router)**, **Tailwind CSS**, and **Supabase**
 One user per email account. Every database table has a `user_id` column with
 row-level security, so a user can only read and write their own rows.
 
-> Status: authentication, the app shell, the Tasks feature and daily task
-> completion tracking are implemented. The dashboard summarises your tasks and
-> tracks daily completion. Calendar, notes, challenges and habits are still
-> placeholders.
+> Status: authentication, the app shell, Tasks, daily completion tracking, the
+> Calendar, Notes, Challenges, Habits and Settings are all implemented and
+> backed by real Supabase reads and writes. The Help page explains how every
+> calculation works.
+
+## Features
+
+| Page | What it does |
+| --- | --- |
+| **Dashboard** | Today's tasks with Yes/No buttons, the daily-completion chart, this-week vs last-week comparison, and the headline counts. |
+| **Tasks** | Create, edit, delete, search, filter, sort, subtasks, recurrence, and a per-task daily history. |
+| **Calendar** | Month and week views over the same task rows, with filters, prev/next/Today navigation, a day panel to edit, complete or add a task on that date. |
+| **Notes** | Autosaving note editor with search, sort, tags, pinning and an optional link to a task. |
+| **Challenges** | Time-boxed goals whose progress is **measured** from real records, never estimated. |
+| **Habits** | Daily / specific-days / times-per-week habits with date-specific check-ins and streaks computed from them. |
+| **Settings** | Profile, theme (applied immediately and saved), week start, time format, and new-task defaults. |
+| **Help** | How each number on the dashboard is calculated, including what is deliberately *not* counted. |
+
+### The three separate ideas about a task
+
+These are stored in different places on purpose, and keeping them apart is what
+makes the numbers honest:
+
+| Idea | Where it lives | What it means |
+| --- | --- | --- |
+| The task's overall state | `tasks.status` | Is it finished right now? |
+| How it went on a given day | `task_daily_logs` | One row per task per day: `completed` true (Yes) or false (No). |
+| A habit's day | `habit_logs` | One **positive** row per habit per day. A missed day is the absence of a row, so "not answered" and "missed" stay distinguishable. |
+
+Nothing is derived from a checkbox: a streak walks backwards through stored
+rows, and a percentage counts stored rows.
 
 ## Daily task completion tracking
 
@@ -46,14 +73,14 @@ DayForge/
 ├── app/
 │   ├── (app)/               # Authenticated shell (sidebar + top bar)
 │   │   ├── layout.tsx       # App shell layout
-│   │   ├── dashboard/       # /dashboard  (task summary + stats)
+│   │   ├── dashboard/       # /dashboard  (today's panel, charts, tiles)
 │   │   ├── tasks/           # /tasks      (full task management)
-│   │   │   └── page.tsx
-│   │   ├── calendar/        # /calendar   (placeholder)
-│   │   ├── notes/           # /notes      (placeholder)
-│   │   ├── challenges/      # /challenges (placeholder)
-│   │   ├── habits/          # /habits     (placeholder)
-│   │   └── settings/         # /settings  (profile form)
+│   │   ├── calendar/        # /calendar   (month + week views)
+│   │   ├── notes/           # /notes      (list + autosaving editor)
+│   │   ├── challenges/      # /challenges (measured goals)
+│   │   ├── habits/          # /habits     (check-ins + streaks)
+│   │   ├── help/            # /help       (how the numbers work)
+│   │   └── settings/         # /settings  (profile + preferences)
 │   ├── globals.css          # Tailwind entry + light/dark color tokens
 │   ├── layout.tsx           # Root layout (also applies the saved theme)
 │   └── page.tsx             # / redirects to /dashboard
@@ -70,16 +97,30 @@ DayForge/
 │   ├── icons.tsx            # Inline SVG icon set
 │   └── index.ts             # Barrel re-exports for the components above
 ├── hooks/
-│   └── useTasks.ts          # All task data access + tab/date logic
+│   ├── useTasks.ts          # Task data access + tab/date/recurrence logic
+│   ├── useNotes.ts          # Note data access + search/sort/tag filters
+│   ├── useChallenges.ts     # Challenge data access + check-ins
+│   └── useHabits.ts         # Habit data access + check-ins
 ├── lib/
 │   ├── nav.ts               # Navigation items (single source of truth)
+│   ├── home-scope.ts        # What "home" vs "course" means, in one place
+│   ├── calendar-utils.ts    # Grid building + date maths (pure)
+│   ├── habit-utils.ts       # Streaks and schedules (pure)
+│   ├── challenge-utils.ts   # Challenge measurement (pure)
+│   ├── note-utils.ts        # Note draft handling + tag parsing (pure)
+│   ├── preferences.ts       # Browser preference reads
+│   ├── preferences-shared.ts # Preference defaults, safe on server and client
 │   └── supabase/
 │       ├── client.ts        # Browser Supabase client (Client Components)
 │       ├── server.ts        # Server Supabase client (Server Components, Actions, Route Handlers)
 │       └── middleware.ts    # Session refresh + redirect rules
+├── tests/                   # Pure-logic tests (node --test)
+├── scripts/                 # Diagnostics (e.g. npm run check:db)
 ├── types/                   # Shared TypeScript types
 ├── supabase/
-│   └── schema.sql           # Complete database schema (single source of truth)
+│   ├── schema.sql           # Complete database schema (single source of truth)
+│   ├── fix-task-daily-logs.sql
+│   └── migrations/          # Incremental migrations
 ├── .env.local.example       # Template for required environment variables
 ├── tailwind.config.ts
 ├── tsconfig.json
@@ -174,7 +215,11 @@ security). Never expose the `service_role` key on the client.
 | `/forgot-password` | public | Request a reset link |
 | `/reset-password` | recovery session | Set a new password |
 | `/auth/callback` | public | Exchanges the OAuth / email-link code for a session |
-| `/dashboard`, `/tasks`, … | signed in | The app itself |
+| `/dashboard`, `/tasks`, `/calendar`, `/notes`, `/challenges`, `/habits`, `/settings` | signed in | The app itself |
+
+Every table carries a `user_id` column, has RLS enabled, and is reachable only
+through four owner-scoped policies, so a signed-in user can only ever read and
+write their own rows.
 
 `middleware.ts` bounces signed-out users to `/login?next=<path>`, and sends
 signed-in users who visit `/login` or `/signup` to `/dashboard`.
@@ -203,6 +248,79 @@ append it at the bottom of the file. Every statement is guarded (for example
 `create table if not exists` and `drop policy if exists` before `create policy`),
 so running the file again is always safe — it will not error or duplicate
 data, it simply converges the database on the file.
+
+### Keeping the database in sync: `npm run check:db`
+
+DayForge is a thin layer over Supabase, so a page whose table is missing does
+not crash — it shows the PostgREST message
+`Could not find the table 'public.x' in the schema cache`. Rather than guess
+which tables exist, run:
+
+```bash
+npm run check:db
+```
+
+It calls the REST API once per table with the public anon key and prints the
+HTTP status for each. A `200` means the table is live; `404 PGRST205` means it
+has not been created yet. It never prints keys and never reads user rows (with
+no session, RLS returns none).
+
+Expected state after running every migration:
+
+```
+profiles               HTTP 200
+tasks                  HTTP 200
+subtasks               HTTP 200
+task_daily_logs        HTTP 200
+notes                  HTTP 200
+habits                 HTTP 200
+habit_logs             HTTP 200
+challenges             HTTP 200
+challenge_checkins     HTTP 200
+user_preferences       HTTP 200
+```
+
+### Incremental migrations
+
+`supabase/schema.sql` is the destination; `supabase/migrations/` holds the SQL
+that gets you there. A migration only ever creates tables, columns, indexes,
+constraints and policies — it does not drop tables, rewrite rows or change
+existing data. Each one is idempotent, so running it twice is safe.
+
+| File | Adds |
+| --- | --- |
+| `2026-10-15-notes-habits-challenges-preferences.sql` | `notes`, `habits`, `habit_logs`, `challenges`, `challenge_checkins`, `user_preferences`, the preference columns on `profiles`, plus RLS and indexes for each |
+
+## Commands
+
+| Command | Does |
+| --- | --- |
+| `npm run dev` | Start the dev server |
+| `npm run build` | Production build |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm test` | Pure-logic tests (Node's built-in runner, no test framework installed) |
+| `npm run check:db` | Print the REST status of every table |
+
+`npm test` runs the calculation rules directly: the daily-percentage
+calculation, the recurrence walk, month/week grid building, habit streaks from
+dated rows, and challenge measurement. Those modules are deliberately pure (no
+Supabase import), which is why they can be tested without a database.
+
+## Preferences
+
+Preferences are stored per **account**, not per browser, so they follow the user
+to another device. Two tables carry them:
+
+- `profiles` — `theme`, `week_start`, `default_task_category`,
+  `default_task_priority`, `show_completed_tasks`.
+- `user_preferences` — the same display values plus `time_format`, as the
+  canonical preference row.
+
+The theme is also mirrored into `localStorage` under the same key the pre-paint
+script in `app/layout.tsx` reads. That is what keeps the chosen theme from
+flashing to light on the next page load; the database copy is what restores it
+on a different device.
 
 ### 3. Dashboard settings you must change
 

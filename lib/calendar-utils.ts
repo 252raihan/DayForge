@@ -66,7 +66,7 @@ function weekdayLabels(weekStart: number): string[] {
  * changes height as the user pages through months.
  */
 export function monthGrid(anchor: string, weekStart: number): CalendarGrid {
-  const [year, month] = anchor.split("-").map(Number);
+  const month = Number(anchor.slice(5, 7));
   const firstOfMonth = `${anchor.slice(0, 7)}-01`;
 
   const start = ((weekStart % 7) + 7) % 7;
@@ -81,10 +81,7 @@ export function monthGrid(anchor: string, weekStart: number): CalendarGrid {
 
   return {
     days,
-    label: new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString(undefined, {
-      month: "long",
-      year: "numeric",
-    }),
+    label: `${MONTH_LABELS[monthIndex(firstOfMonth)]} ${yearOf(firstOfMonth)}`,
     weekdayLabels: weekdayLabels(weekStart),
   };
 }
@@ -120,29 +117,64 @@ export function taskDayKey(task: Task): string {
   return todayKey(date);
 }
 
-/** "Tuesday, 14 October 2026". */
-export function formatLongDay(key: string): string {
-  const [year, month, day] = key.split("-").map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+/**
+ * Deterministic month labels. `toLocaleDateString(undefined, ...)` resolves to
+ * the environment's DEFAULT locale, which differs between the Node server and
+ * the browser (Node may give "October" in en-GB month order while a browser
+ * set to en-US still says "October" but can differ for short forms like
+ * "Sept" vs "Sep") - that mismatch is the documented hydration error.
+ * Hard-coding the names removes ICU/locale entirely from the output.
+ */
+export const MONTH_LABELS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
+
+/** Short month names for the compact axis labels, 0-indexed like Date. */
+const MONTHS_SHORT = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+] as const;
+
+/** "2026-10-14" -> 9 (October, 0-indexed). Pure string parsing, no Date. */
+function monthIndex(key: string): number {
+  return Number(key.slice(5, 7)) - 1;
 }
 
-/** "14 Oct". */
+/** "2026-10-14" -> 14. */
+function dayOfMonth(key: string): number {
+  return Number(key.slice(8, 10));
+}
+
+/** "2026-10-14" -> "2026". */
+function yearOf(key: string): string {
+  return key.slice(0, 4);
+}
+
+/** "Tuesday, 14 October 2026" - fixed order, fixed names, every environment. */
+export function formatLongDay(key: string): string {
+  return `${WEEKDAY_FULL[weekdayOf(key)]}, ${dayOfMonth(key)} ${MONTH_LABELS[monthIndex(key)]} ${yearOf(key)}`;
+}
+
+/** Full weekday names, 0-indexed like WEEKDAY_LABELS, for formatLongDay. */
+const WEEKDAY_FULL = [
+  "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+] as const;
+
+/** "14 Oct" - fixed order (day before month), fixed names, every environment. */
 export function formatShortDay(key: string): string {
-  const [year, month, day] = key.split("-").map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-  });
+  return `${dayOfMonth(key)} ${MONTHS_SHORT[monthIndex(key)]}`;
 }
 
 /** Time of day from a stored UTC instant, rendered in the browser's timezone. */
 export function formatTimeOfDay(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "No time set";
-  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  // Fixed 12-hour formatting: ICU would render the same hour differently
+  // between environments ("3 pm" vs "3 PM" vs "15:00"), so it is spelled out.
+  const twelve = hours % 12 === 0 ? 12 : hours % 12;
+  const suffix = hours < 12 ? "am" : "pm";
+  return `${twelve}:${minutes} ${suffix}`;
 }
