@@ -11,7 +11,8 @@ row-level security, so a user can only read and write their own rows.
 > Status: authentication, the app shell, Tasks, daily completion tracking, the
 > Calendar, Notes, Challenges, Habits and Settings are all implemented and
 > backed by real Supabase reads and writes. The Help page explains how every
-> calculation works.
+> calculation works. The UI is tested in a headless browser (`npm run check:ui`)
+> so regressions in rendering and console errors are caught before they ship.
 
 ## Features
 
@@ -307,6 +308,23 @@ calculation, the recurrence walk, month/week grid building, habit streaks from
 dated rows, and challenge measurement. Those modules are deliberately pure (no
 Supabase import), which is why they can be tested without a database.
 
+### Running tests against the database
+
+When a bug only appears against real data (the classic example is the
+"Could not save today's status" failure), run the pure suite first, then the
+database-backed tests:
+
+```bash
+npm test                 # pure logic - no database needed
+npm run check:db         # is every table present?
+npm run test:db          # writes and reads real rows, then cleans up
+```
+
+`npm run test:db` needs `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env.local` plus a signed-in test account; it
+skips itself with a clear message when either is missing rather than failing.
+See `tests/db/task-daily-logs.test.mjs` for the upsert/RLS coverage.
+
 ## Preferences
 
 Preferences are stored per **account**, not per browser, so they follow the user
@@ -389,4 +407,3 @@ RLS is enabled with two policies, both scoped to `auth.uid() = id`:
 
 There is deliberately no **insert** policy (the trigger owns row creation) and
 no **delete** policy (the row cascades away with the auth user).
-"# DayForge" 
