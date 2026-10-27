@@ -10,12 +10,23 @@ import { createClient } from "@/lib/supabase/client";
 export default function GoogleButton({
   label = "Continue with Google",
   next = "/dashboard",
+  tone = "default",
 }: {
   label?: string;
   next?: string;
+  /** `default` = light/dark token surface; `glass` = dark auth card. */
+  tone?: "default" | "glass";
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const buttonStyles =
+    tone === "glass"
+      ? "border-white/15 bg-white/[0.04] text-slate-100 hover:border-brand-500/40 hover:bg-white/[0.08]"
+      : "border-border bg-surface hover:bg-accent-soft";
+
+  const errorStyles =
+    tone === "glass" ? "text-red-300" : "text-red-600 dark:text-red-400";
 
   async function handleClick() {
     setPending(true);
@@ -45,7 +56,8 @@ export default function GoogleButton({
         type="button"
         onClick={handleClick}
         disabled={pending}
-        className="inline-flex w-full items-center justify-center gap-2.5 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium transition-colors hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-60"
+        aria-busy={pending ? true : undefined}
+        className={`inline-flex w-full items-center justify-center gap-2.5 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${buttonStyles}`}
       >
         <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
           <path
@@ -69,7 +81,7 @@ export default function GoogleButton({
       </button>
 
       {error ? (
-        <p role="alert" className="text-xs font-medium text-red-600 dark:text-red-400">
+        <p role="alert" className={`text-xs font-medium ${errorStyles}`}>
           {error}
         </p>
       ) : null}

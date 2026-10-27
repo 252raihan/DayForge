@@ -15,12 +15,31 @@
 }
 
 .dark {
-  --app-bg: 15 23 42; /* slate-900 */
-  --surface: 30 41 59; /* slate-800 */
-  --border: 51 65 85; /* slate-700 */
-  --muted: 148 163 184; /* slate-400 */
-  --accent: 129 140 248; /* indigo-400 - brighter for contrast on dark */
-  --accent-soft: 49 46 129; /* indigo-900 */
+  /* Premium navy palette for the redesigned dark dashboard.
+     --app-bg is the page, --surface the cards, --border the hairlines. */
+  --app-bg: 8 15 32; /* #080F20 - deep navy page background */
+  --surface: 20 34 58; /* #14223A - card surface */
+  --border: 39 55 81; /* #273751 - subtle blue-gray hairline */
+  --muted: 148 163 184; /* slate-400 - secondary text */
+  --accent: 117 104 255; /* #7568FF - indigo primary action */
+  --accent-soft: 34 43 82; /* deep indigo tint for active/hover fills */
+}
+
+/* Dashboard-only extras, kept out of the token set because they are palette
+   constants (not theme-swapped values). */
+.dark {
+  --df-card-2: 27 41 64; /* #1B2940 - secondary card tone */
+  --df-violet: 81 69 205; /* #5145CD - deeper violet for gradients */
+  --df-blue: 57 152 255; /* #3998FF - blue highlight */
+  --df-green: 16 201 149; /* #10C995 - success */
+  --df-red: 255 98 109; /* #FF626D - overdue */
+}
+
+.dark body {
+  background-image:
+    radial-gradient(1000px 600px at 85% -10%, rgba(117, 104, 255, 0.1), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(57, 152, 255, 0.07), transparent 60%);
+  background-attachment: fixed;
 }
 
 html {
@@ -35,4 +54,98 @@ html.dark {
 :focus-visible {
   outline: 2px solid rgb(var(--accent));
   outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Authentication screens (/login, /signup, /forgot-password, /reset-password).
+   These classes are namespaced `auth-` and are only used by the auth layout, so
+   the light app shell and its theme tokens are untouched.
+   --------------------------------------------------------------------------- */
+@layer components {
+  /* Cinematic navy backdrop: layered radial glows over a deep navy base. The
+     base colour is a fallback for browsers without gradient support. */
+  .auth-canvas {
+    background-color: #080f22;
+    background-image:
+      radial-gradient(900px 520px at 12% 8%, rgba(116, 104, 255, 0.22), transparent 62%),
+      radial-gradient(760px 480px at 88% 92%, rgba(85, 149, 255, 0.16), transparent 60%),
+      radial-gradient(620px 420px at 78% 4%, rgba(85, 149, 255, 0.1), transparent 65%),
+      linear-gradient(155deg, #080f22 0%, #0b1229 46%, #101a35 100%);
+    background-attachment: fixed;
+  }
+
+  /* Very fine grid, faded out toward the edges. Pure CSS - no image asset. */
+  .auth-grid::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(to right, rgba(148, 163, 184, 0.07) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(148, 163, 184, 0.07) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 75% 65% at 50% 40%, #000 35%, transparent 78%);
+    -webkit-mask-image: radial-gradient(ellipse 75% 65% at 50% 40%, #000 35%, transparent 78%);
+  }
+
+  /* Frosted card used for the login form and the floating dashboard preview. */
+  .auth-glass {
+    background: linear-gradient(160deg, rgba(22, 35, 74, 0.72), rgba(11, 18, 41, 0.86));
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+  }
+
+  /* Indigo -> electric-blue text gradient for the highlighted word. */
+  .auth-gradient-text {
+    background-image: linear-gradient(100deg, #958dff 0%, #7468ff 42%, #5595ff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Shared input styling for the auth forms (icon + show/hide controls). */
+  .auth-input {
+    width: 100%;
+    border-radius: 0.875rem;
+    border-width: 1px;
+    border-style: solid;
+    background-color: rgba(8, 15, 34, 0.55);
+    padding: 0.75rem 1rem 0.75rem 2.75rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    color: #e8ecf8;
+    outline: none;
+    transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  }
+  .auth-input::placeholder {
+    color: rgba(148, 163, 184, 0.7);
+  }
+  .auth-input:hover {
+    border-color: rgba(116, 104, 255, 0.4);
+  }
+  .auth-input:focus {
+    border-color: rgba(116, 104, 255, 0.85);
+    background-color: rgba(8, 15, 34, 0.8);
+    box-shadow: 0 0 0 4px rgba(116, 104, 255, 0.18);
+  }
+  /* Keyboard focus still needs the global ring to be visible on a dark card. */
+  .auth-input:focus-visible {
+    outline: 2px solid #958dff;
+    outline-offset: 2px;
+  }
+  .auth-input[aria-invalid="true"] {
+    border-color: rgba(248, 113, 113, 0.75);
+  }
+  .auth-input[aria-invalid="true"]:focus {
+    border-color: rgba(248, 113, 113, 0.95);
+    box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.16);
+  }
+}
+
+/* Respect users who ask the OS to reduce motion: no drifting or pulsing. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-float,
+  .animate-pulse-glow {
+    animation: none !important;
+  }
 }

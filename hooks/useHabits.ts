@@ -16,6 +16,17 @@ import type { Habit, HabitInsert, HabitLog, HabitStats, HabitUpdate } from "@/ty
 /** How many days the habit history strip plots. */
 export const HABIT_CHART_DAYS = 14;
 
+/**
+ * True when the habit has a stored check-in for today.
+ *
+ * The last slot of `recent` is only *today* when the window ends today, which
+ * is true for the stats built here - but check the date rather than trusting
+ * "the last one", so a stale or empty slot can never read as done.
+ */
+export function isDoneToday(item: HabitStats, today: string = todayKey()): boolean {
+  return item.recent[HABIT_CHART_DAYS - 1]?.log_date === today;
+}
+
 export function useHabits(weekStart: number = 1) {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [logs, setLogs] = useState<HabitLog[]>([]);
@@ -204,15 +215,14 @@ export function useHabits(weekStart: number = 1) {
 
     function rank(item: HabitStats): number {
       if (!item.dueToday) return 2;
-      const log = item.recent[HABIT_CHART_DAYS - 1];
-      return log?.log_date === today ? 1 : 0;
+      return isDoneToday(item, today) ? 1 : 0;
     }
   }, [visibleStats]);
 
   const todayStats = checkinOrder.filter((item) => item.dueToday);
-  const doneToday = todayStats.filter(
-    (item) => item.recent[HABIT_CHART_DAYS - 1] !== null,
-  ).length;
+  // Counted against today's date, not "a row exists in the window": a check-in
+  // from any other day of the last 14 must not make today look done.
+  const doneToday = todayStats.filter((item) => isDoneToday(item)).length;
 
   return {
     stats: checkinOrder,

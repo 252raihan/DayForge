@@ -99,16 +99,25 @@ export function SubmitButton({
   children,
   pending,
   pendingLabel = "Please wait...",
+  tone = "default",
 }: {
   children: React.ReactNode;
   pending?: boolean;
   pendingLabel?: string;
+  /** `default` = solid accent; `gradient` = the premium indigo->blue CTA. */
+  tone?: "default" | "gradient";
 }) {
+  const styles =
+    tone === "gradient"
+      ? "bg-gradient-to-r from-brand-500 via-brand-500 to-electric-500 shadow-glow hover:brightness-110 hover:shadow-[0_0_44px_-8px_rgba(116,104,255,0.7)] active:brightness-95"
+      : "bg-accent hover:opacity-90";
+
   return (
     <button
       type="submit"
       disabled={pending}
-      className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+      aria-busy={pending ? true : undefined}
+      className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${styles}`}
     >
       {pending ? pendingLabel : children}
     </button>

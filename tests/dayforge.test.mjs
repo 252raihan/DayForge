@@ -468,6 +468,32 @@ test("buildHabitStats reports real totals and a 14-day strip", () => {
   );
 });
 
+// Regression: the habits page used to count "done today" as "a row exists in
+// the 14-day window", so a check-in from any earlier day marked today done and
+// the toggle then tried to UNCHECK a day that was never checked.
+test("a check-in on an earlier day does not count as done today", () => {
+  const daily = habit({ frequency: "daily" });
+  // Yesterday only - nothing at all for today.
+  const stats = buildHabitStats(daily, [habitLog("h1", "2026-10-14")], 1, 14, "2026-10-15");
+
+  assert.equal(stats.recent[13], null, "today has no row");
+  assert.notEqual(
+    stats.recent[13]?.log_date,
+    "2026-10-15",
+    "today must not inherit yesterday's check-in",
+  );
+
+  // And with today checked, the last slot really is today.
+  const withToday = buildHabitStats(
+    daily,
+    [habitLog("h1", "2026-10-14"), habitLog("h1", "2026-10-15")],
+    1,
+    14,
+    "2026-10-15",
+  );
+  assert.equal(withToday.recent[13]?.log_date, "2026-10-15");
+});
+
 // ---------------------------------------------------------------------------
 // Challenges
 // ---------------------------------------------------------------------------

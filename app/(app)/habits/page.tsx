@@ -5,7 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import Modal from "@/components/tasks/Modal";
 import { EmptyState, ErrorBanner, LoadingRows, StatTile } from "@/components/ui";
 import { Field, FormMessage } from "@/components/ui/Form";
-import { HABIT_CHART_DAYS, useHabits } from "@/hooks/useHabits";
+import { HABIT_CHART_DAYS, isDoneToday, useHabits } from "@/hooks/useHabits";
 import { dayWindow, isScheduledOn, weekdayOf } from "@/lib/habit-utils";
 import { todayKey, WEEKDAY_LABELS } from "@/hooks/useTasks";
 import type { Habit, HabitFrequency, HabitInsert, HabitStats } from "@/types";
@@ -64,7 +64,7 @@ export default function HabitsPage() {
 
   async function handleToggleCheckIn(item: HabitStats) {
     const today = todayKey();
-    const doneTodayAlready = item.recent[HABIT_CHART_DAYS - 1]?.log_date === today;
+    const doneTodayAlready = isDoneToday(item, today);
 
     setBusyId(item.habit.id);
     setActionError(null);
@@ -172,7 +172,7 @@ export default function HabitsPage() {
           <ul className="space-y-2">
             {todayStats.map((item) => {
               const today = todayKey();
-              const done = item.recent[HABIT_CHART_DAYS - 1]?.log_date === today;
+              const done = isDoneToday(item, today);
               return (
                 <li
                   key={item.habit.id}

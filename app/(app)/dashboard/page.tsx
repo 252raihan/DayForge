@@ -1,16 +1,16 @@
-import { PageHeader } from "@/components";
 import { getProfile, getUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import type { Task } from "@/types";
 import DashboardTasks from "@/components/dashboard/DashboardTasks";
+import { DashboardWelcome } from "@/components/dashboard/DashboardWelcome";
 
 // Dashboard: the overview of "your day".
 //
-// Rendering split: the greeting is static for the whole session, so it renders
-// on the server. The task summary and the daily-completion panels are
-// interactive (Yes/No buttons, checkboxes), so the first page of tasks is
-// fetched on the server and handed to a client component, which reuses the same
-// `useTasks` data layer as the Tasks page - daily logs included.
+// Rendering split: the greeting and the date card are static for the whole
+// session, so they render on the server. The task summary, progress and
+// challenge panels are interactive (Yes/No buttons, checkboxes, check-ins), so
+// the first page of tasks is fetched on the server and handed to a client
+// component, which reuses the same `useTasks` data layer as the Tasks page.
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
@@ -22,11 +22,7 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <PageHeader
-        title={`Hi, ${displayName}`}
-        description="Your day at a glance: mark today's tasks Yes or No, and watch your daily completion chart fill up."
-      />
-
+      <DashboardWelcome name={displayName} />
       {/* Seed data for the client hook. It refetches on mount, which is what
           keeps the list live when a task is added or ticked off. */}
       <DashboardTasks initialTasks={tasks} />
