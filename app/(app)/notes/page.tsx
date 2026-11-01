@@ -1,10 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import PageHeader from "@/components/PageHeader";
-import { EmptyState, ErrorBanner, LoadingRows } from "@/components/ui";
+import {
+  Alert,
+  Button,
+  Card,
+  EmptyState,
+  ErrorBanner,
+  Input,
+  LoadingRows,
+  Select,
+} from "@/components/ui";
 import NoteEditor, { type NoteDraft } from "@/components/notes/NoteEditor";
+import { NotesIcon, PlusIcon, SearchIcon, PinIcon } from "@/components/icons";
 import { ALL_TAGS, useNotes } from "@/hooks/useNotes";
 import { useTasks } from "@/hooks/useTasks";
 import { HOME_SCOPE } from "@/lib/home-scope";
@@ -85,33 +94,16 @@ export default function NotesPage() {
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <PageHeader
-          title="Notes"
-          description="Lecture notes, quick thoughts and revision material. Changes save as you type."
-        />
-
-        <button
-          type="button"
-          onClick={handleCreate}
-          disabled={creating}
-          className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-        >
-          <svg
-            className="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          {creating ? "Creating..." : "New note"}
-        </button>
-      </div>
+      <PageHeader
+        title="Notes"
+        description="Lecture notes, quick thoughts and revision material. Changes save as you type."
+        actions={
+          <Button onClick={handleCreate} loading={creating} loadingLabel="Creating...">
+            <PlusIcon className="h-4 w-4" strokeWidth={2} />
+            New note
+          </Button>
+        }
+      />
 
       {error ? (
         <div className="mb-4">
@@ -121,103 +113,107 @@ export default function NotesPage() {
 
       {actionError ? (
         <div className="mb-4">
-          <ErrorBanner message={actionError} />
+          <Alert onDismiss={() => setActionError(null)}>{actionError}</Alert>
         </div>
       ) : null}
 
       {/* Toolbar: search, tag filter, sort and the pinned toggle. */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1 sm:max-w-xs">
-          <label htmlFor="notes-search" className="sr-only">
-            Search notes
-          </label>
-          <input
-            id="notes-search"
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search notes..."
-            className="w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/40"
-          />
+      <Card className="mb-4 p-2.5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1 sm:max-w-xs">
+            <label htmlFor="notes-search" className="sr-only">
+              Search notes
+            </label>
+            <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted">
+              <SearchIcon className="h-4 w-4" />
+            </span>
+            <Input
+              id="notes-search"
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search notes…"
+              className="h-8 bg-surface-2 pl-8 shadow-none"
+            />
+          </div>
+
+          <div className="scrollbar-thin flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0">
+            <label htmlFor="notes-tag" className="sr-only">
+              Filter by tag
+            </label>
+            <Select
+              id="notes-tag"
+              value={tag}
+              onChange={(e) => setTag(e.target.value)}
+              className="h-8 w-auto shrink-0 border-transparent bg-surface-2 py-0 text-xs shadow-none"
+            >
+              <option value={ALL_TAGS}>All tags</option>
+              {tags.map((value) => (
+                <option key={value} value={value}>
+                  #{value}
+                </option>
+              ))}
+            </Select>
+
+            <label htmlFor="notes-sort" className="sr-only">
+              Sort notes
+            </label>
+            <Select
+              id="notes-sort"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as NoteSort)}
+              className="h-8 w-auto shrink-0 border-transparent bg-surface-2 py-0 text-xs shadow-none"
+            >
+              <option value="updated">Last updated</option>
+              <option value="created">Date created</option>
+              <option value="title">Title</option>
+            </Select>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              active={pinnedOnly}
+              onClick={() => setPinnedOnly((prev) => !prev)}
+              aria-pressed={pinnedOnly}
+              className="shrink-0"
+            >
+              <PinIcon className="h-3.5 w-3.5" />
+              Pinned
+            </Button>
+
+            {hasActiveRefinements ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearRefinements}
+                className="shrink-0"
+              >
+                Clear
+              </Button>
+            ) : null}
+          </div>
         </div>
+      </Card>
 
-        <div>
-          <label htmlFor="notes-tag" className="sr-only">
-            Filter by tag
-          </label>
-          <select
-            id="notes-tag"
-            value={tag}
-            onChange={(e) => setTag(e.target.value)}
-            className="rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/40"
-          >
-            <option value={ALL_TAGS}>All tags</option>
-            {tags.map((value) => (
-              <option key={value} value={value}>
-                #{value}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label htmlFor="notes-sort" className="sr-only">
-            Sort notes
-          </label>
-          <select
-            id="notes-sort"
-            value={sort}
-            onChange={(e) => setSort(e.target.value as NoteSort)}
-            className="rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/40"
-          >
-            <option value="updated">Last updated</option>
-            <option value="created">Date created</option>
-            <option value="title">Title</option>
-          </select>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setPinnedOnly((prev) => !prev)}
-          aria-pressed={pinnedOnly}
-          className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
-            pinnedOnly
-              ? "border-accent bg-accent-soft text-accent"
-              : "border-border text-muted hover:bg-accent-soft/60 hover:text-accent"
-          }`}
-        >
-          Pinned only
-        </button>
-
-        {hasActiveRefinements ? (
-          <button
-            type="button"
-            onClick={clearRefinements}
-            className="rounded-xl border border-border px-3 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-accent-soft hover:text-accent"
-          >
-            Clear
-          </button>
-        ) : null}
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[20rem_1fr] lg:items-start">
+      <div className="grid gap-4 lg:grid-cols-[19rem_minmax(0,1fr)] lg:items-start">
         {/* List */}
         <section className="min-w-0">
           {loading ? (
             <LoadingRows count={3} label="Loading notes" />
           ) : visibleNotes.length === 0 ? (
             <EmptyState
+              icon={<NotesIcon className="h-5 w-5" />}
               title={hasActiveRefinements ? "No matching notes" : "No notes yet"}
               hint={
                 hasActiveRefinements
                   ? "Try a different search term, tag or filter."
-                  : "Create your first note to keep lecture material in one place."
+                  : "Create your first note to keep lecture material, ideas and revision in one place."
               }
               actionLabel={hasActiveRefinements ? "Clear filters" : "New note"}
               onClick={hasActiveRefinements ? clearRefinements : handleCreate}
             />
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-1.5">
               {visibleNotes.map((note) => {
                 const isActive = selected?.id === note.id;
                 const linkedTask = note.task_id ? tasksById.get(note.task_id) : undefined;
@@ -227,43 +223,56 @@ export default function NotesPage() {
                       type="button"
                       onClick={() => selectNote(note.id)}
                       aria-current={isActive ? "true" : undefined}
-                      className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                      className={`w-full rounded-lg border p-3 text-left transition-colors ${
                         isActive
-                          ? "border-accent bg-accent-soft"
-                          : "border-border bg-surface hover:border-accent/60"
+                          ? "border-accent/40 bg-accent-soft"
+                          : "border-border bg-surface hover:border-border-strong hover:bg-surface-2/60"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <p className="min-w-0 truncate text-sm font-medium">
+                        <p
+                          className={`min-w-0 truncate text-[13px] font-medium ${
+                            isActive ? "text-accent" : "text-fg"
+                          }`}
+                        >
                           {note.title.trim() || "Untitled note"}
                         </p>
                         {note.pinned ? (
-                          <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-semibold text-muted">
-                            Pinned
-                          </span>
+                          <PinIcon
+                            className={`h-3.5 w-3.5 shrink-0 ${isActive ? "text-accent" : "text-muted"}`}
+                          />
                         ) : null}
                       </div>
 
-                      <p className="mt-1 line-clamp-2 text-xs text-muted">
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted">
                         {note.content.trim() || "No content yet."}
                       </p>
 
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-muted">
-                        <span>{formatNoteDate(note.updated_at)}</span>
-                        {note.category ? <span>· {note.category}</span> : null}
-                        {(note.tags ?? []).map((value) => (
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-2xs text-muted">
+                        <span className="tabular-nums">{formatNoteDate(note.updated_at)}</span>
+                        {note.category ? (
+                          <>
+                            <span className="text-muted/60" aria-hidden="true">·</span>
+                            <span className="truncate">{note.category}</span>
+                          </>
+                        ) : null}
+                        {(note.tags ?? []).slice(0, 2).map((value) => (
                           <span
                             key={value}
-                            className="rounded-full border border-border px-1.5 py-0.5"
+                            className="rounded border border-border bg-surface-2 px-1 py-px text-3xs"
                           >
                             #{value}
                           </span>
                         ))}
+                        {(note.tags?.length ?? 0) > 2 ? (
+                          <span className="text-3xs">+{(note.tags?.length ?? 0) - 2}</span>
+                        ) : null}
                       </div>
 
                       {linkedTask ? (
-                        <p className="mt-1.5 truncate text-[10px] text-accent">
-                          Linked: {linkedTask.title}
+                        <p className="mt-1.5 flex items-center gap-1 truncate text-3xs text-accent">
+                          <span className="h-1 w-1 shrink-0 rounded-full bg-accent" aria-hidden="true" />
+                          {linkedTask.title}
                         </p>
                       ) : null}
                     </button>
@@ -275,7 +284,7 @@ export default function NotesPage() {
         </section>
 
         {/* Editor */}
-        <section className="min-w-0">
+        <section className="min-w-0 lg:sticky lg:top-20">
           {selected ? (
             <NoteEditor
               // Keyed by note id so opening another note re-seeds the draft
@@ -288,28 +297,16 @@ export default function NotesPage() {
               onClose={() => selectNote(null)}
             />
           ) : loading ? (
-            <div className="rounded-2xl border border-border bg-surface p-6 text-sm text-muted">
-              Loading your notes...
-            </div>
+            <Card className="text-[13px] text-muted">Loading your notes…</Card>
           ) : (
-            <div className="rounded-2xl border border-dashed border-border bg-surface p-10 text-center">
-              <p className="text-sm font-medium">Nothing selected</p>
-              <p className="mt-1 text-sm text-muted">
-                Open a note from the list, or{" "}
-                <button
-                  type="button"
-                  onClick={handleCreate}
-                  className="font-semibold text-accent hover:underline"
-                >
-                  create a new one
-                </button>
-                . Your tasks are in{" "}
-                <Link href="/tasks" className="font-semibold text-accent hover:underline">
-                  Tasks
-                </Link>
-                .
-              </p>
-            </div>
+            <EmptyState
+              icon={<NotesIcon className="h-5 w-5" />}
+              title="Nothing selected"
+              hint="Open a note from the list, or start a new one. Everything you write is saved automatically."
+              actionLabel="New note"
+              onClick={handleCreate}
+              className="lg:min-h-[24rem]"
+            />
           )}
         </section>
       </div>

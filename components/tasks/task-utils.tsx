@@ -8,15 +8,17 @@ import {
   isToday,
   isTomorrow,
 } from "date-fns";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import type { Task } from "@/types";
 
 // Priority badge. Colour carries meaning, so the label is always shown too -
 // colour alone is not accessible.
-const PRIORITY_STYLES: Record<Task["priority"], string> = {
-  high: "border-red-200 bg-red-100 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300",
-  medium:
-    "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300",
-  low: "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300",
+// Low is neutral rather than green: green in a task list already means
+// "completed", so using it for priority would overload the colour.
+const PRIORITY_TONES: Record<Task["priority"], BadgeTone> = {
+  high: "danger",
+  medium: "warning",
+  low: "neutral",
 };
 
 const PRIORITY_LABEL: Record<Task["priority"], string> = {
@@ -27,11 +29,9 @@ const PRIORITY_LABEL: Record<Task["priority"], string> = {
 
 export function PriorityBadge({ priority }: { priority: Task["priority"] }) {
   return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${PRIORITY_STYLES[priority]}`}
-    >
+    <Badge tone={PRIORITY_TONES[priority]} dot={priority !== "low"}>
       {PRIORITY_LABEL[priority]}
-    </span>
+    </Badge>
   );
 }
 

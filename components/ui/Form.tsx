@@ -1,76 +1,197 @@
-// Small form primitives shared by the auth pages so the fields look and behave
-// identically everywhere.
+import { Alert } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { Input, Select, Textarea } from "@/components/ui/Input";
+import { cn } from "@/lib/cn";
 
-type FieldProps = {
+// Form primitives shared by the app and the auth pages, so labels, hints,
+// errors and controls look and behave identically everywhere.
+
+type SharedFieldProps = {
   id: string;
   label: string;
-  type?: string;
-  value: string;
-  onChange: (value: string) => void;
-  /** Validation or server error to show under the field. */
   error?: string | null;
-  placeholder?: string;
-  autoComplete?: string;
-  required?: boolean;
   hint?: string;
+  optional?: boolean;
+  className?: string;
 };
 
-// Label + input + error message, wired up for accessibility:
-// `aria-invalid` and `aria-describedby` tie the error text to the input so a
-// screen reader announces it.
+function FieldLabel({
+  id,
+  label,
+  optional,
+}: {
+  id: string;
+  label: string;
+  optional?: boolean;
+}) {
+  return (
+    <label htmlFor={id} className="block text-sm font-medium text-fg">
+      {label}
+      {optional ? (
+        <span className="ml-1 font-normal text-muted">(optional)</span>
+      ) : null}
+    </label>
+  );
+}
+
+function FieldMessages({
+  id,
+  error,
+  hint,
+}: {
+  id: string;
+  error?: string | null;
+  hint?: string;
+}) {
+  if (error) {
+    return (
+      <p
+        id={`${id}-error`}
+        className="text-xs font-medium text-red-600 dark:text-red-400"
+      >
+        {error}
+      </p>
+    );
+  }
+
+  if (hint) {
+    return (
+      <p id={`${id}-hint`} className="text-xs text-muted">
+        {hint}
+      </p>
+    );
+  }
+
+  return null;
+}
+
+function describedBy(id: string, error?: string | null, hint?: string) {
+  return (
+    [error ? `${id}-error` : null, !error && hint ? `${id}-hint` : null]
+      .filter(Boolean)
+      .join(" ") || undefined
+  );
+}
+
+type FieldProps = Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  "id" | "value" | "onChange" | "className"
+> &
+  SharedFieldProps & {
+    value: string;
+    onChange: (value: string) => void;
+  };
+
+// Label + input + hint/error, wired up for accessibility: `aria-invalid` and
+// `aria-describedby` tie the message to the input so a screen reader announces
+// it.
 export function Field({
   id,
   label,
-  type = "text",
   value,
   onChange,
   error,
-  placeholder,
-  autoComplete,
-  required,
   hint,
+  optional,
+  className,
+  ...props
 }: FieldProps) {
-  const errorId = `${id}-error`;
-  const hintId = `${id}-hint`;
-
   return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-sm font-medium">
-        {label}
-      </label>
-      <input
+    <div className={cn("space-y-1.5", className)}>
+      <FieldLabel id={id} label={label} optional={optional} />
+      <Input
         id={id}
         name={id}
-        type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoComplete={autoComplete}
-        required={required}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={
-          [error ? errorId : null, hint ? hintId : null]
-            .filter(Boolean)
-            .join(" ") || undefined
-        }
-        className={`w-full rounded-xl border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors placeholder:text-muted/70 focus:ring-2 focus:ring-accent/40 ${error ? "border-red-400 focus:border-red-500" : "border-border focus:border-accent"
-          }`}
+        invalid={Boolean(error)}
+        aria-describedby={describedBy(id, error, hint)}
+        {...props}
       />
-      {hint && !error ? (
-        <p id={hintId} className="text-xs text-muted">
-          {hint}
-        </p>
-      ) : null}
-      {error ? (
-        <p id={errorId} className="text-xs font-medium text-red-600 dark:text-red-400">
-          {error}
-        </p>
-      ) : null}
+      <FieldMessages id={id} error={error} hint={hint} />
     </div>
   );
 }
 
-// Page-level message: a red error box or a green success box.
+type SelectFieldProps = Omit<
+  React.SelectHTMLAttributes<HTMLSelectElement>,
+  "id" | "value" | "onChange" | "className"
+> &
+  SharedFieldProps & {
+    value: string | number;
+    onChange: (value: string) => void;
+    children: React.ReactNode;
+  };
+
+export function SelectField({
+  id,
+  label,
+  value,
+  onChange,
+  error,
+  hint,
+  optional,
+  className,
+  children,
+  ...props
+}: SelectFieldProps) {
+  return (
+    <div className={cn("space-y-1.5", className)}>
+      <FieldLabel id={id} label={label} optional={optional} />
+      <Select
+        id={id}
+        name={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        invalid={Boolean(error)}
+        aria-describedby={describedBy(id, error, hint)}
+        {...props}
+      >
+        {children}
+      </Select>
+      <FieldMessages id={id} error={error} hint={hint} />
+    </div>
+  );
+}
+
+type TextareaFieldProps = Omit<
+  React.TextareaHTMLAttributes<HTMLTextAreaElement>,
+  "id" | "value" | "onChange" | "className"
+> &
+  SharedFieldProps & {
+    value: string;
+    onChange: (value: string) => void;
+  };
+
+export function TextareaField({
+  id,
+  label,
+  value,
+  onChange,
+  error,
+  hint,
+  optional,
+  className,
+  ...props
+}: TextareaFieldProps) {
+  return (
+    <div className={cn("space-y-1.5", className)}>
+      <FieldLabel id={id} label={label} optional={optional} />
+      <Textarea
+        id={id}
+        name={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        invalid={Boolean(error)}
+        aria-describedby={describedBy(id, error, hint)}
+        {...props}
+      />
+      <FieldMessages id={id} error={error} hint={hint} />
+    </div>
+  );
+}
+
+// Page-level message: an error or success alert.
 export function FormMessage({
   children,
   tone = "error",
@@ -78,20 +199,7 @@ export function FormMessage({
   children: React.ReactNode;
   tone?: "error" | "success";
 }) {
-  const styles =
-    tone === "success"
-      ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
-      : "border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300";
-
-  // role=status is announced politely; role=alert interrupts for errors.
-  return (
-    <div
-      role={tone === "error" ? "alert" : "status"}
-      className={`rounded-xl border px-3.5 py-2.5 text-sm ${styles}`}
-    >
-      {children}
-    </div>
-  );
+  return <Alert tone={tone}>{children}</Alert>;
 }
 
 // Primary submit button with a built-in pending state.
@@ -100,26 +208,28 @@ export function SubmitButton({
   pending,
   pendingLabel = "Please wait...",
   tone = "default",
+  className,
 }: {
   children: React.ReactNode;
   pending?: boolean;
   pendingLabel?: string;
   /** `default` = solid accent; `gradient` = the premium indigo->blue CTA. */
   tone?: "default" | "gradient";
+  className?: string;
 }) {
-  const styles =
-    tone === "gradient"
-      ? "bg-gradient-to-r from-brand-500 via-brand-500 to-electric-500 shadow-glow hover:brightness-110 hover:shadow-[0_0_44px_-8px_rgba(116,104,255,0.7)] active:brightness-95"
-      : "bg-accent hover:opacity-90";
-
   return (
-    <button
+    <Button
       type="submit"
-      disabled={pending}
-      aria-busy={pending ? true : undefined}
-      className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${styles}`}
+      fullWidth
+      loading={pending}
+      loadingLabel={pendingLabel}
+      className={cn(
+        tone === "gradient" &&
+          "bg-gradient-to-r from-brand-500 via-brand-500 to-electric-500 shadow-glow hover:brightness-110 hover:shadow-[0_0_44px_-8px_rgba(116,104,255,0.7)] active:brightness-95",
+        className,
+      )}
     >
-      {pending ? pendingLabel : children}
-    </button>
+      {children}
+    </Button>
   );
 }

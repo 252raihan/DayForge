@@ -4,20 +4,31 @@ import { useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import TaskFormModal from "@/components/tasks/TaskFormModal";
 import ConfirmDeleteModal from "@/components/tasks/ConfirmDeleteModal";
-import { ErrorBanner } from "@/components/ui";
+import { PriorityBadge } from "@/components/tasks/task-utils";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  EmptyState,
+  ErrorBanner,
+  ProgressBar,
+  Select,
+  SegmentedControl,
+} from "@/components/ui";
+import {
+  CalendarIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  EditIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@/components/icons";
 import { useTasks, matchesFilter, todayKey } from "@/hooks/useTasks";
 import { useResolvedPreferences } from "@/lib/preferences";
 import { HOME_SCOPE } from "@/lib/home-scope";
-import {
-  formatLongDay,
-  formatShortDay,
-  formatTimeOfDay,
-  monthGrid,
-  shiftDays,
-  shiftMonth,
-  taskDayKey,
-  weekGrid,
-} from "@/lib/calendar-utils";
+import { formatLongDay, formatShortDay, formatTimeOfDay, monthGrid, shiftDays, shiftMonth, taskDayKey, weekGrid } from "@/lib/calendar-utils";
 import type {
   DailyStatus,
   Task,
@@ -176,66 +187,57 @@ export default function CalendarPage() {
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <PageHeader
-          title="Calendar"
-          description="Your tasks by due date. Complete, edit or add them straight from the day you are looking at."
-        />
+      <PageHeader
+        title="Calendar"
+        description="Your tasks by due date. Complete, edit or add them straight from the day you are looking at."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <SegmentedControl
+              ariaLabel="Calendar view"
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "month", label: "Month" },
+                { value: "week", label: "Week" },
+              ]}
+            />
 
-        <div className="flex items-center gap-2">
-          {/* Mon / Sun order follows the saved preference. */}
-          <div className="flex rounded-xl border border-border p-0.5">
-            {(["month", "week"] as ViewMode[]).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                aria-pressed={view === mode}
-                onClick={() => setView(mode)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
-                  view === mode
-                    ? "bg-accent-soft text-accent"
-                    : "text-muted hover:text-accent"
-                }`}
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setAnchor(today);
+                setSelectedDate(today);
+              }}
+            >
+              Today
+            </Button>
+
+            <div className="flex items-center rounded-lg border border-border bg-surface shadow-xs">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => navigate(-1)}
+                aria-label={view === "month" ? "Previous month" : "Previous week"}
+                className="rounded-r-none"
               >
-                {mode}
-              </button>
-            ))}
+                <ChevronLeftIcon className="h-4 w-4" />
+              </Button>
+              <span className="min-w-[8.5rem] border-x border-border px-1 text-center text-xs font-semibold tabular-nums text-fg">
+                {rangeLabel}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => navigate(1)}
+                aria-label={view === "month" ? "Next month" : "Next week"}
+                className="rounded-l-none"
+              >
+                <ChevronRightIcon className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setAnchor(today);
-              setSelectedDate(today);
-            }}
-            className="rounded-xl border border-border px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-accent-soft hover:text-accent"
-          >
-            Today
-          </button>
-
-          <div className="flex items-center rounded-xl border border-border">
-            <button
-              type="button"
-              onClick={() => navigate(-1)}
-              aria-label={view === "month" ? "Previous month" : "Previous week"}
-              className="rounded-l-xl px-2.5 py-2 text-muted transition-colors hover:bg-accent-soft hover:text-accent"
-            >
-              <Chevron direction="left" />
-            </button>
-            <span className="min-w-[9.5rem] px-1 text-center text-xs font-semibold">
-              {rangeLabel}
-            </span>
-            <button
-              type="button"
-              onClick={() => navigate(1)}
-              aria-label={view === "month" ? "Next month" : "Next week"}
-              className="rounded-r-xl px-2.5 py-2 text-muted transition-colors hover:bg-accent-soft hover:text-accent"
-            >
-              <Chevron direction="right" />
-            </button>
-          </div>
-        </div>
-      </div>
+        }
+      />
 
       {error ? (
         <div className="mb-4">
@@ -245,41 +247,41 @@ export default function CalendarPage() {
 
       {actionError ? (
         <div className="mb-4">
-          <ErrorBanner message={actionError} />
+          <Alert onDismiss={() => setActionError(null)}>{actionError}</Alert>
         </div>
       ) : null}
 
       {/* Filters. They narrow every cell and the day panel together. */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <select
+        <Select
           aria-label="Filter by status"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as TaskFilter)}
-          className="rounded-xl border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
+          className="w-auto"
         >
           <option value="all">All statuses</option>
           <option value="today">Due today</option>
           <option value="upcoming">Upcoming</option>
           <option value="overdue">Overdue</option>
-        </select>
+        </Select>
 
-        <select
+        <Select
           aria-label="Filter by priority"
           value={priorityFilter ?? ""}
           onChange={(e) => setPriorityFilter((e.target.value || null) as TaskPriority | null)}
-          className="rounded-xl border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
+          className="w-auto"
         >
           <option value="">Any priority</option>
           <option value="high">High</option>
           <option value="medium">Medium</option>
           <option value="low">Low</option>
-        </select>
+        </Select>
 
-        <select
+        <Select
           aria-label="Filter by category"
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="rounded-xl border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
+          className="w-auto"
         >
           <option value="__all__">Any category</option>
           {categories.map((category) => (
@@ -287,37 +289,33 @@ export default function CalendarPage() {
               {category}
             </option>
           ))}
-        </select>
+        </Select>
 
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          active={hideCompleted}
           aria-pressed={hideCompleted}
           onClick={() => {
             setHideCompletedTouched(true);
             setHideCompleted((prev) => !prev);
           }}
-          className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
-            hideCompleted
-              ? "border-accent bg-accent-soft text-accent"
-              : "border-border text-muted hover:bg-accent-soft/60 hover:text-accent"
-          }`}
         >
           Hide completed
-        </button>
+        </Button>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_22rem] xl:items-start">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_21rem] xl:items-start">
         {/* The grid */}
-        <section className={loading ? "opacity-60" : ""}>
+        <Card padded={false} className={loading ? "opacity-60" : ""}>
           <div
-            className={`grid gap-px overflow-hidden rounded-2xl border border-border bg-border ${
+            className={`grid gap-px overflow-hidden rounded-xl bg-border ${
               view === "month" ? "grid-cols-7" : "grid-cols-1 sm:grid-cols-7"
             }`}
           >
             {grid.weekdayLabels.map((label) => (
               <div
                 key={label}
-                className="bg-surface px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-muted"
+                className="bg-surface-2 px-2 py-2 text-center text-3xs font-semibold uppercase tracking-[0.08em] text-muted"
               >
                 {view === "week" ? label : label.slice(0, 3)}
               </div>
@@ -336,20 +334,30 @@ export default function CalendarPage() {
                   onClick={() => setSelectedDate(day.date)}
                   aria-current={isToday ? "date" : undefined}
                   aria-pressed={isSelected}
-                  className={`min-h-[5.5rem] bg-surface px-2 py-2 text-left align-top transition-colors sm:min-h-[6.5rem] ${
-                    day.inMonth ? "" : "opacity-50"
-                  } ${isSelected ? "ring-2 ring-inset ring-accent" : "hover:bg-accent-soft/30"}`}
+                  className={`min-h-[4.5rem] bg-surface px-1.5 py-1.5 text-left align-top transition-colors sm:min-h-[6.5rem] sm:px-2 sm:py-2 ${
+                    day.inMonth ? "" : "opacity-45"
+                  } ${
+                    isSelected
+                      ? "bg-accent-soft/70 ring-1 ring-inset ring-accent/50"
+                      : "hover:bg-surface-2"
+                  }`}
                 >
                   <div className="flex items-center justify-between gap-1">
                     <span
-                      className={`grid h-6 w-6 place-items-center rounded-full text-xs font-semibold ${
-                        isToday ? "bg-accent text-white" : "text-muted"
+                      className={`grid h-6 w-6 place-items-center rounded-full text-xs font-semibold tabular-nums ${
+                        isToday
+                          ? "bg-accent text-white"
+                          : isSelected
+                            ? "text-accent"
+                            : day.inMonth
+                              ? "text-fg"
+                              : "text-muted"
                       }`}
                     >
                       {Number(day.date.slice(-2))}
                     </span>
                     {dayTasks.length > 0 ? (
-                      <span className="text-[10px] font-medium text-muted">
+                      <span className="text-3xs font-medium tabular-nums text-muted">
                         {doneCount}/{dayTasks.length}
                       </span>
                     ) : null}
@@ -361,26 +369,32 @@ export default function CalendarPage() {
                     {dayTasks.slice(0, view === "week" ? 99 : 2).map((task) => {
                       const done = isTaskDone(task, day.date, todayStatusByTask, dailyLogsByTask);
                       const overdue = !done && taskDayKey(task) < today;
+                      // A left dot carries the state, so the chip itself can stay
+                      // a quiet tint instead of a saturated block of colour.
+                      const dot = done
+                        ? "bg-emerald-500"
+                        : overdue
+                          ? "bg-red-500"
+                          : task.priority === "high"
+                            ? "bg-amber-500"
+                            : "bg-accent";
                       return (
                         <span
                           key={task.id}
                           title={task.title}
-                          className={`block truncate rounded px-1.5 py-0.5 text-[11px] ${
+                          className={`flex items-center gap-1 truncate rounded-[4px] px-1 py-0.5 text-[10px] leading-[1.35] ${
                             done
-                              ? "bg-emerald-100 text-emerald-700 line-through dark:bg-emerald-950 dark:text-emerald-300"
-                              : overdue
-                                ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
-                                : task.priority === "high"
-                                  ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                                  : "bg-accent-soft text-accent"
+                              ? "bg-surface-2 text-muted line-through"
+                              : "bg-surface-2/80 text-fg"
                           }`}
                         >
-                          {task.title}
+                          <span className={`h-1 w-1 shrink-0 rounded-full ${dot}`} aria-hidden="true" />
+                          <span className="truncate">{task.title}</span>
                         </span>
                       );
                     })}
                     {view === "month" && dayTasks.length > 2 ? (
-                      <span className="block px-1.5 text-[10px] text-muted">
+                      <span className="block px-1 text-3xs text-muted">
                         +{dayTasks.length - 2} more
                       </span>
                     ) : null}
@@ -390,79 +404,113 @@ export default function CalendarPage() {
             })}
           </div>
 
-          <p className="mt-2 text-xs text-muted">
-            <span className="mr-3">Green = completed</span>
-            <span className="mr-3">Red = overdue</span>
-            <span className="mr-3">Amber = high priority</span>
-            <span>Counts show done / total for that day</span>
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-surface px-3 py-2 text-3xs text-muted">
+            <LegendDot className="bg-emerald-500" label="Completed" />
+            <LegendDot className="bg-red-500" label="Overdue" />
+            <LegendDot className="bg-amber-500" label="High priority" />
+            <LegendDot className="bg-accent" label="Planned" />
+            <span>Counts are done / total</span>
           </p>
-        </section>
+        </Card>
 
         {/* The selected day */}
-        <section className="rounded-2xl border border-border bg-surface p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold tracking-tight">
+        <Card className="xl:sticky xl:top-20">
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-2 border-b border-border pb-3">
+            <div className="min-w-0">
+              <p className="text-2xs font-medium uppercase tracking-[0.08em] text-muted">
+                {selectedDate === today ? "Today" : "Selected day"}
+              </p>
+              <h2 className="mt-0.5 text-sm font-semibold tracking-tight text-fg">
                 {formatLongDay(selectedDate)}
               </h2>
-              <p className="mt-0.5 text-xs text-muted">
+              <p className="mt-0.5 text-2xs text-muted">
                 {selectedTasks.length} task{selectedTasks.length === 1 ? "" : "s"} due
+                {selectedTasks.length > 0
+                  ? ` · ${selectedTasks.filter((t) => t.status === "done").length} done`
+                  : ""}
               </p>
             </div>
 
             {view === "week" ? (
-              <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">
+              <Badge tone="neutral">
                 Week of {formatShortDay(orderedDays[0]?.date ?? anchor)}
-              </span>
+              </Badge>
             ) : null}
           </div>
 
-          <button
-            type="button"
-            onClick={() => openAdd(selectedDate)}
-            className="mb-3 w-full rounded-xl bg-accent px-3 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-          >
-            Add task on this date
-          </button>
+          {selectedTasks.length > 0 ? (
+            <ProgressBar
+              value={selectedTasks.filter((t) => t.status === "done").length}
+              max={selectedTasks.length}
+              label="Tasks completed on this day"
+              className="mb-3"
+            />
+          ) : null}
+
+          <Button fullWidth onClick={() => openAdd(selectedDate)} className="mb-3">
+            <PlusIcon className="h-4 w-4" strokeWidth={2} />
+            Add task
+          </Button>
 
           {selectedTasks.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-border px-3.5 py-6 text-center text-xs text-muted">
-              No tasks due on {formatShortDay(selectedDate)}.
-              {(statusFilter !== "all" || priorityFilter || categoryFilter !== "__all__") &&
-              filtered.length === 0 &&
-              accountTasks.length > 0
-                ? " Your filters may be hiding some."
-                : ""}
-            </p>
+            <EmptyState
+              size="sm"
+              icon={<CalendarIcon className="h-5 w-5" />}
+              title={`Nothing due ${formatShortDay(selectedDate)}`}
+              hint={
+                (statusFilter !== "all" || priorityFilter || categoryFilter !== "__all__") &&
+                filtered.length === 0 &&
+                accountTasks.length > 0
+                  ? "Your filters may be hiding some tasks for this day."
+                  : "This day is clear. Add something, or pick another date."
+              }
+            />
           ) : (
             <ul className="space-y-2">
               {selectedTasks.map((task) => {
                 const done = task.status === "done";
                 const todayStatus = todayStatusByTask.get(task.id) ?? null;
                 const isTodayRow = taskDayKey(task) === today;
+                const checklist = subtasksByTask.get(task.id) ?? [];
+                const checklistDone = checklist.filter((s) => s.done).length;
                 return (
                   <li
                     key={task.id}
-                    className={`rounded-xl border border-border bg-app p-3 ${
+                    className={`rounded-lg border border-border bg-surface p-3 shadow-xs ${
                       busyIds.includes(task.id) ? "opacity-60" : ""
                     }`}
                   >
-                    <div className="flex items-start gap-2">
-                      <input
-                        type="checkbox"
+                    <div className="flex items-start gap-2.5">
+                      <Checkbox
                         checked={done}
                         disabled={busyIds.includes(task.id)}
                         onChange={() => handleToggle(task)}
                         aria-label={done ? `Mark "${task.title}" as not done` : `Mark "${task.title}" as done`}
-                        style={{ height: "1.125rem", width: "1.125rem" }}
-                        className="mt-0.5 shrink-0 cursor-pointer rounded border-border accent-[rgb(var(--accent))]"
+                        className="mt-0.5"
                       />
                       <div className="min-w-0 flex-1">
-                        <p className={`truncate text-sm font-medium ${done ? "text-muted line-through" : ""}`}>
-                          {task.title}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted">
-                          {task.due_at ? formatTimeOfDay(task.due_at) : "No time set"} · {task.category} · {task.priority}
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <p
+                            className={`min-w-0 break-words text-[13px] font-medium leading-relaxed ${
+                              done ? "text-muted line-through" : "text-fg"
+                            }`}
+                          >
+                            {task.title}
+                          </p>
+                          <PriorityBadge priority={task.priority} />
+                        </div>
+                        <p className="mt-1 flex flex-wrap items-center gap-x-2 text-2xs text-muted">
+                          <span>{task.due_at ? formatTimeOfDay(task.due_at) : "No time set"}</span>
+                          <span className="text-muted/60" aria-hidden="true">·</span>
+                          <span className="truncate">{task.category}</span>
+                          {checklist.length > 0 ? (
+                            <>
+                              <span className="text-muted/60" aria-hidden="true">·</span>
+                              <span className="tabular-nums">
+                                {checklistDone}/{checklist.length} checklist
+                              </span>
+                            </>
+                          ) : null}
                         </p>
                       </div>
                     </div>
@@ -471,66 +519,63 @@ export default function CalendarPage() {
                         daily log describes today, so that is the only day it
                         can honestly be recorded for. */}
                     {isTodayRow ? (
-                      <div className="mt-2 flex items-center gap-1.5">
-                        <span className="text-[11px] text-muted">Today:</span>
-                        <button
-                          type="button"
+                      <div className="mt-2.5 flex items-center gap-1.5 border-t border-border/70 pt-2.5">
+                        <span className="mr-0.5 text-2xs text-muted">Today:</span>
+                        <Button
+                          variant="success"
+                          size="sm"
+                          active={todayStatus === "yes"}
                           disabled={busyIds.includes(task.id)}
                           aria-pressed={todayStatus === "yes"}
                           onClick={() => handleDaily(task, "yes")}
-                          className={`rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed ${
-                            todayStatus === "yes"
-                              ? "border-emerald-500 bg-emerald-500 text-white"
-                              : "border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300"
-                          }`}
+                          className="h-7 min-w-12 px-2"
                         >
                           Yes
-                        </button>
-                        <button
-                          type="button"
+                        </Button>
+                        <Button
+                          variant="dangerSubtle"
+                          size="sm"
+                          active={todayStatus === "no"}
                           disabled={busyIds.includes(task.id)}
                           aria-pressed={todayStatus === "no"}
                           onClick={() => handleDaily(task, "no")}
-                          className={`rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed ${
-                            todayStatus === "no"
-                              ? "border-red-500 bg-red-500 text-white"
-                              : "border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300"
-                          }`}
+                          className="h-7 min-w-12 px-2"
                         >
                           No
-                        </button>
+                        </Button>
                       </div>
                     ) : null}
 
-                    <div className="mt-2 flex items-center gap-2 text-[11px]">
-                      <button
-                        type="button"
-                        onClick={() => openEdit(task)}
-                        className="font-semibold text-accent hover:underline"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleting(task)}
-                        className="font-semibold text-red-700 hover:underline dark:text-red-300"
-                      >
-                        Delete
-                      </button>
-                      {(subtasksByTask.get(task.id)?.length ?? 0) > 0 ? (
-                        <span className="text-muted">
-                          {subtasksByTask.get(task.id)?.filter((s) => s.done).length}/{
-                            subtasksByTask.get(task.id)?.length
-                          } checklist
-                        </span>
+                    <div className="mt-1.5 -mb-1 flex items-center justify-end gap-0.5">
+                      {checklist.length > 0 ? (
+                        <Badge tone="neutral" className="mr-auto border-transparent bg-transparent px-1">
+                          {checklistDone}/{checklist.length} checklist
+                        </Badge>
                       ) : null}
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => openEdit(task)}
+                        aria-label={`Edit "${task.title}"`}
+                      >
+                        <EditIcon className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setDeleting(task)}
+                        aria-label={`Delete "${task.title}"`}
+                        className="hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                      </Button>
                     </div>
                   </li>
                 );
               })}
             </ul>
           )}
-        </section>
+        </Card>
       </div>
 
       <TaskFormModal
@@ -593,21 +638,15 @@ function byTimeThenPriority(a: Task, b: Task): number {
 // Presentation helpers
 // ---------------------------------------------------------------------------
 
-/** Chevron for the month/week navigation buttons. */
-function Chevron({ direction }: { direction: "left" | "right" }) {
+/** Legend dot + word, so the grid's colour language is documented on the page. */
+function LegendDot({ className, label }: { className: string; label: string }) {
   return (
-    <svg
-      className="h-3.5 w-3.5"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d={direction === "left" ? "M15 18l-6-6 6-6" : "M9 18l6-6-6-6"} />
-    </svg>
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`h-1.5 w-1.5 rounded-full ${className}`} aria-hidden="true" />
+      {label}
+    </span>
   );
 }
+
+
 

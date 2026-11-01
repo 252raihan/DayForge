@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FormMessage } from "@/components/ui/Form";
+import {
+  Alert,
+  Button,
+  Field,
+  SelectField,
+  TextareaField,
+} from "@/components/ui";
+import { CloseIcon, PinIcon, TrashIcon } from "@/components/icons";
 import {
   AUTOSAVE_DELAY_MS,
   draftFromNote,
@@ -158,13 +165,25 @@ export default function NoteEditor({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col rounded-2xl border border-border bg-surface">
-      {/* Header: state, then the actions. */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2 text-xs text-muted">
+    <div className="flex h-full min-h-0 flex-col rounded-xl border border-border bg-surface shadow-panel">
+      {/* Header: save state, then the actions. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-2 text-2xs">
+          <span
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+              saving
+                ? "bg-amber-500 animate-pulse"
+                : error
+                  ? "bg-red-500"
+                  : dirty
+                    ? "bg-amber-500"
+                    : "bg-emerald-500"
+            }`}
+            aria-hidden="true"
+          />
           {saving ? (
-            <span role="status" className="font-medium">
-              Saving...
+            <span role="status" className="font-medium text-muted">
+              Saving…
             </span>
           ) : error ? (
             <span role="alert" className="font-medium text-red-600 dark:text-red-400">
@@ -175,87 +194,78 @@ export default function NoteEditor({
               Unsaved changes
             </span>
           ) : (
-            <span className="text-emerald-600 dark:text-emerald-400">
-              Saved{savedAt ? ` at ${savedAt}` : ""}
-            </span>
+            <span className="text-muted">Saved{savedAt ? ` at ${savedAt}` : ""}</span>
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            active={draft.pinned}
             onClick={() => update("pinned", !draft.pinned)}
             aria-pressed={draft.pinned}
-            className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-              draft.pinned
-                ? "border-accent bg-accent-soft text-accent"
-                : "border-border text-muted hover:bg-accent-soft/60 hover:text-accent"
-            }`}
           >
+            <PinIcon className="h-3.5 w-3.5" />
             {draft.pinned ? "Pinned" : "Pin"}
-          </button>
+          </Button>
 
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={handleSaveNow}
             disabled={saving || !dirty}
-            className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-muted transition-colors hover:bg-accent-soft hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Save now
-          </button>
+            Save
+          </Button>
 
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={() => setConfirmingDelete(true)}
-            className="rounded-lg border border-red-300 px-2.5 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
+            aria-label="Delete this note"
+            className="hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
           >
-            Delete
-          </button>
+            <TrashIcon className="h-4 w-4" />
+          </Button>
 
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-muted transition-colors hover:bg-accent-soft hover:text-accent lg:hidden"
+            className="lg:hidden"
             aria-label="Close editor"
           >
-            <svg
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.75}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </button>
+            <CloseIcon className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
       {error ? (
         <div className="px-4 pt-3">
-          <FormMessage>{error}</FormMessage>
+          <Alert onDismiss={() => setError(null)}>{error}</Alert>
         </div>
       ) : null}
 
       {confirmingDelete ? (
-        <div className="mx-4 mt-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm dark:border-red-800 dark:bg-red-950/40">
-          <p className="font-medium text-red-800 dark:text-red-300">
-            Delete this note? This can&apos;t be undone.
-          </p>
+        <Alert
+          tone="warning"
+          title="Delete this note? This can't be undone."
+          className="mx-4 mt-3"
+        >
           <div className="mt-2 flex gap-2">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => setConfirmingDelete(false)}
-              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold"
             >
               Cancel
-            </button>
-            <button
-              type="button"
-              disabled={saving}
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              loading={saving}
+              loadingLabel="Deleting..."
               onClick={async () => {
                 try {
                   await onDelete(note);
@@ -266,116 +276,93 @@ export default function NoteEditor({
                   setConfirmingDelete(false);
                 }
               }}
-              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
             >
               Delete note
-            </button>
+            </Button>
           </div>
-        </div>
+        </Alert>
       ) : null}
 
       {/* Fields */}
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-        <div className="space-y-1.5">
-          <label htmlFor="note-title" className="block text-sm font-medium">
-            Title
-          </label>
-          <input
-            id="note-title"
-            value={draft.title}
-            onChange={(e) => update("title", e.target.value)}
-            placeholder="Untitled note"
-            className="w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/40"
-          />
-        </div>
+        <Field
+          id="note-title"
+          label="Title"
+          value={draft.title}
+          onChange={(value) => update("title", value)}
+          placeholder="Untitled note"
+        />
 
-        <div className="space-y-1.5">
-          <label htmlFor="note-content" className="block text-sm font-medium">
-            Note
-          </label>
-          <textarea
-            id="note-content"
-            value={draft.content}
-            onChange={(e) => update("content", e.target.value)}
-            rows={14}
-            placeholder="Write your note here..."
-            className="w-full resize-y rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm leading-relaxed outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/40"
-          />
-          <p className="text-xs text-muted">
-            {draft.content.trim() ? draft.content.trim().split(/\s+/).length : 0} words ·
-            saved automatically
-          </p>
-        </div>
+        <TextareaField
+          id="note-content"
+          label="Note"
+          value={draft.content}
+          onChange={(value) => update("content", value)}
+          rows={14}
+          placeholder="Write your note here..."
+          className="[&_textarea]:resize-y [&_textarea]:leading-relaxed"
+          hint={`${
+            draft.content.trim() ? draft.content.trim().split(/\s+/).length : 0
+          } words · saved automatically`}
+        />
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <label htmlFor="note-category" className="block text-sm font-medium">
-              Course / subject
-            </label>
-            <input
-              id="note-category"
-              value={draft.category}
-              onChange={(e) => update("category", e.target.value)}
-              placeholder="e.g. Data Structures"
-              list="note-category-suggestions"
-              className="w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/40"
-            />
-            <datalist id="note-category-suggestions">
-              {categorySuggestions.map((category) => (
-                <option key={category} value={category} />
-              ))}
-            </datalist>
-          </div>
+          <Field
+            id="note-category"
+            label="Course / subject"
+            value={draft.category}
+            onChange={(value) => update("category", value)}
+            placeholder="e.g. Data Structures"
+            list="note-category-suggestions"
+          />
 
-          <div className="space-y-1.5">
-            <label htmlFor="note-tags" className="block text-sm font-medium">
-              Tags
-            </label>
-            <input
-              id="note-tags"
-              value={tagInput}
-              onChange={(e) => {
-                setTagInput(e.target.value);
-                update("tags", parseTags(e.target.value));
-              }}
-              placeholder="exam, revision"
-              className="w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/40"
-            />
-            <p className="text-xs text-muted">Separate tags with commas.</p>
-          </div>
+          <Field
+            id="note-tags"
+            label="Tags"
+            value={tagInput}
+            onChange={(value) => {
+              setTagInput(value);
+              update("tags", parseTags(value));
+            }}
+            placeholder="exam, revision"
+            hint="Separate tags with commas."
+          />
         </div>
 
-        <div className="space-y-1.5">
-          <label htmlFor="note-task" className="block text-sm font-medium">
-            Linked task <span className="font-normal text-muted">(optional)</span>
-          </label>
-          <select
-            id="note-task"
-            value={draft.taskId ?? ""}
-            onChange={(e) => update("taskId", e.target.value || null)}
-            className="w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/40"
-          >
-            <option value="">Not linked</option>
-            {tasks.map((task) => (
-              <option key={task.id} value={task.id}>
-                {task.title}
-              </option>
-            ))}
-          </select>
-        </div>
+        <datalist id="note-category-suggestions">
+          {categorySuggestions.map((category) => (
+            <option key={category} value={category} />
+          ))}
+        </datalist>
+
+        <SelectField
+          id="note-task"
+          label="Linked task"
+          optional
+          value={draft.taskId ?? ""}
+          onChange={(value) => update("taskId", value || null)}
+        >
+          <option value="">Not linked</option>
+          {tasks.map((task) => (
+            <option key={task.id} value={task.id}>
+              {task.title}
+            </option>
+          ))}
+        </SelectField>
       </div>
 
       {/* Save lives in the header as well ("Save now"); this is the larger
           target for people who reach the bottom of a long note. */}
-      <div className="flex justify-end border-t border-border p-4">
-        <button
-          type="button"
+      <div className="flex justify-end border-t border-border p-3">
+        <Button
           onClick={handleSaveNow}
-          disabled={saving || !dirty}
-          className="w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-40"
+          loading={saving}
+          loadingLabel="Saving..."
+          disabled={!dirty}
+          className="w-full sm:w-32"
         >
-          {saving ? "Saving..." : dirty ? "Save" : "Saved"}
-        </button>
+          {dirty ? "Save note" : "Saved"}
+        </Button>
       </div>
     </div>
   );

@@ -5,9 +5,25 @@ import { isDueToday, isOverdue, recurrenceLabel } from "@/hooks/useTasks";
 import { formatDueDate, PriorityBadge } from "@/components/tasks/task-utils";
 import SubTaskList from "@/components/tasks/SubTaskList";
 import TaskProgressStrip from "@/components/tasks/TaskProgressStrip";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Input";
+import {
+  ClockIcon,
+  EditIcon,
+  TrashIcon,
+  RepeatIcon,
+  FolderIcon,
+} from "@/components/icons";
+import { cn } from "@/lib/cn";
 
-// A single task card: completion checkbox, title, priority badge, due date, the
-// recurrence hint, the subtask checklist and the edit/delete actions.
+// A single task row: completion checkbox, title, priority, due date, category,
+// the recurrence hint, the checklist, the daily history and the row actions.
+//
+// Urgency is expressed with a 2px left rule plus a tinted title icon - not a
+// fully tinted card - so a long list stays readable. Completed rows flatten to
+// muted text and drop their accent rail.
+
 export default function TaskCard({
   task,
   subtasks,
@@ -44,116 +60,93 @@ export default function TaskCard({
   busy?: boolean;
 }) {
   const done = task.status === "done";
-  const overdue = isOverdue(task);
-  const dueToday = isDueToday(task);
+  const overdue = !done && isOverdue(task);
+  const dueToday = !done && isDueToday(task);
   const repeats = recurrenceLabel(task);
 
-  // Overdue rows get a red left border and a tinted background so they stand
-  // out at a glance; "due today" gets a subtler amber treatment.
-  const accent = overdue
-    ? "border-l-4 border-l-red-500 bg-red-50/60 dark:bg-red-950/20"
-    : dueToday
-      ? "border-l-4 border-l-amber-400 bg-amber-50/50 dark:bg-amber-950/10"
-      : "border-l-4 border-l-transparent";
+  const rail = done
+    ? "border-l-transparent"
+    : overdue
+      ? "border-l-red-500"
+      : dueToday
+        ? "border-l-amber-400"
+        : "border-l-transparent";
 
   return (
     <li
-      className={`group rounded-2xl border border-border bg-surface p-4 transition-colors ${accent} ${busy ? "opacity-60" : ""
-        }`}
+      className={cn(
+        "group rounded-xl border border-l-2 border-border bg-surface shadow-panel transition-colors",
+        rail,
+        busy && "opacity-60",
+      )}
     >
-      <div className="flex items-start gap-3">
-        {/* Completion checkbox */}
-        <input
-          type="checkbox"
+      <div className="flex items-start gap-3 p-3.5 sm:p-4">
+        <Checkbox
           checked={done}
           disabled={busy}
           onChange={() => onToggle(task)}
           aria-label={done ? `Mark "${task.title}" as not done` : `Mark "${task.title}" as done`}
-          className="mt-0.5 h-4.5 w-4.5 shrink-0 cursor-pointer rounded border-border accent-[rgb(var(--accent))]"
-          style={{ height: "1.125rem", width: "1.125rem" }}
+          className="mt-0.5 h-[17px] w-[17px]"
         />
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <h3
-              className={`text-sm font-medium ${done ? "text-muted line-through" : ""
-                }`}
+              className={cn(
+                "min-w-0 break-words text-[13.5px] font-medium leading-relaxed",
+                done ? "text-muted line-through decoration-muted/50" : "text-fg",
+              )}
             >
               {task.title}
             </h3>
 
             <div className="flex shrink-0 items-center gap-1.5">
               <PriorityBadge priority={task.priority} />
+              {done ? (
+                <Badge tone="success" dot>
+                  Done
+                </Badge>
+              ) : null}
             </div>
           </div>
 
           {task.description ? (
             <p
-              className={`mt-1 whitespace-pre-wrap text-sm ${done ? "text-muted/70" : "text-muted"
-                }`}
+              className={cn(
+                "mt-1 whitespace-pre-wrap text-[13px] leading-relaxed",
+                done ? "text-muted/70" : "text-muted",
+              )}
             >
               {task.description}
             </p>
           ) : null}
 
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <span
-              className={`inline-flex items-center gap-1.5 text-xs ${overdue
-                  ? "font-medium text-red-600 dark:text-red-400"
-                  : "text-muted"
-                }`}
+              className={cn(
+                "inline-flex items-center gap-1.5 text-2xs",
+                overdue ? "font-medium text-red-600 dark:text-red-400" : "text-muted",
+              )}
             >
-              <svg
-                className="h-3.5 w-3.5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.75}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 7.5V12l3 2" />
-              </svg>
+              <ClockIcon className="h-3.5 w-3.5" />
               {formatDueDate(task.due_at)}
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">
+
+            <span className="inline-flex items-center gap-1.5 text-2xs text-muted">
+              <FolderIcon className="h-3.5 w-3.5" />
               {task.category}
-              {/* A recurring task is one action per day, not one per calendar
-                  entry, so say which day today's Yes/No applies to. */}
-              {repeats && todayStatus
-                ? ` · ${
-                    todayStatus === "yes" ? "done today" : "marked no for today"
-                  }`
-                : null}
             </span>
 
             {/* Recurrence hint, so a repeating task is identifiable at a glance. */}
             {repeats ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">
-                <svg
-                  className="h-3 w-3"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.75}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M17 2l4 4-4 4" />
-                  <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
-                  <path d="M7 22l-4-4 4-4" />
-                  <path d="M21 13v1a4 4 0 0 1-4 4H3" />
-                </svg>
+              <span className="inline-flex items-center gap-1.5 text-2xs text-muted">
+                <RepeatIcon className="h-3.5 w-3.5" />
                 {repeats}
-              </span>
-            ) : null}
-
-            {done ? (
-              <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                Done
+                {/* A recurring task is one action per day, not one per calendar
+                    entry, so say which day today's Yes/No applies to. */}
+                {todayStatus
+                  ? ` · ${todayStatus === "yes" ? "done today" : "no today"}`
+                  : null}
               </span>
             ) : null}
           </div>
@@ -179,53 +172,28 @@ export default function TaskCard({
           />
         </div>
 
-        {/* Row actions */}
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
+        {/* Row actions: quiet until hover/focus, always reachable by keyboard. */}
+        <div className="flex shrink-0 items-center gap-0.5 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100">
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={() => onEdit(task)}
             disabled={busy}
             aria-label={`Edit "${task.title}"`}
-            className="rounded-lg p-1.5 text-muted transition-colors hover:bg-accent-soft hover:text-accent disabled:opacity-50"
           >
-            <svg
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.75}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M12 20h9" />
-              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
-            </svg>
-          </button>
+            <EditIcon className="h-4 w-4" />
+          </Button>
 
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={() => onDelete(task)}
             disabled={busy}
             aria-label={`Delete "${task.title}"`}
-            className="rounded-lg p-1.5 text-muted transition-colors hover:bg-red-100 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950"
+            className="hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
           >
-            <svg
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.75}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M3 6h18" />
-              <path d="M8 6V4h8v2" />
-              <path d="M19 6l-1 14H6L5 6" />
-              <path d="M10 11v6M14 11v6" />
-            </svg>
-          </button>
+            <TrashIcon className="h-4 w-4" />
+          </Button>
         </div>
       </div>
     </li>

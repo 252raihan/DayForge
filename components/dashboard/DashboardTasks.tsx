@@ -1,14 +1,39 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import DashboardTaskList from "@/components/dashboard/DashboardTaskList";
 import TodayTasksPanel from "@/components/dashboard/TodayTasksPanel";
-import CompletionChart from "@/components/dashboard/CompletionChart";
 import DashboardChallenges from "@/components/dashboard/DashboardChallenges";
+import DashboardHabits from "@/components/dashboard/DashboardHabits";
+import WeeklyProgress from "@/components/dashboard/WeeklyProgress";
+import QuickAddTask from "@/components/dashboard/QuickAddTask";
 import { useTasks, matchesFilter } from "@/hooks/useTasks";
-import { CardHeader } from "@/components/ui/Card";
+import { useResolvedPreferences } from "@/lib/preferences";
 import { HOME_SCOPE } from "@/lib/home-scope";
-import type { DailyStatus, Task, TaskFilter, TodayTaskProgress } from "@/types";
+import {
+  Card,
+  CardHeader,
+  CardLink,
+  EmptyState,
+  ErrorBanner,
+  ProgressBar,
+  ProgressRing,
+  SegmentedControl,
+  StatTile,
+} from "@/components/ui";
+import {
+  AlertIcon,
+  CalendarIcon,
+  ListChecksIcon,
+  TrendingUpIcon,
+} from "@/components/icons";
+import type {
+  DailyStatus,
+  Task,
+  TaskFilter,
+  TodayTaskProgress,
+} from "@/types";
 
 /** One day's aggregate completion, as produced by useTasks().dailyStats. */
 type DailyStatPoint = {
@@ -20,54 +45,90 @@ type DailyStatPoint = {
   percent: number | null;
 };
 
-// How many rows the dashboard shows before linking off to the full Tasks page.
-const MAX_ROWS = 5;
+// How many rows the lists show before linking off to the full page.
+const MAX_TODAY_ROWS = 4;
+const MAX_UPCOMING_ROWS = 4;
 
-// The same four tabs as /tasks, kept typed so setFilter accepts the key.
 const TABS: TaskFilter[] = ["today", "upcoming", "overdue", "all"];
 
-// Dashboard summary. Reuses the same `useTasks` hook as the Tasks page, so the
-// tab logic, the counts and the mutations all come from one implementation.
+const TAB_LABELS: Record<TaskFilter, string> = {
+  today: "Today",
+  upcoming: "Upcoming",
+  overdue: "Overdue",
+  all: "All",
+};
+
+// Dashboard body. Reuses the same `useTasks` hook as the Tasks page, so the tab
+// logic, the counts, the daily stats and every mutation come from one
+// implementation and can never disagree with /tasks.
 //
-// `initialTasks` comes from the server, so the user sees real numbers on the
-// very first paint instead of a spinner; the hook then refetches on mount to
-// pick up anything that changed in another tab.
+// `initialTasks` comes from the server, so the first paint has real numbers
+// instead of a spinner; the hook then refetches on mount.
 //
-// Layout (desktop):
-//   [ stat cards row ]
-//   [ Today's Tasks (2fr) ][ Today's Progress (1fr) ]
-//   [ Active Challenges (1fr) ][ Recent Tasks (2fr) ]
-export default function DashboardTasks({ initialTasks }: { initialTasks: Task[] }) {
+// Layout:
+//   [ quick add ]
+//   [ metric strip: open / due today / overdue / upcoming ]
+//   [ Today's tasks (2fr) ][ Progress ring + weekly chart (1fr) ]
+//   [ Upcoming (2fr) ][ Habits (1fr) ][ Challenges (1fr) ]
+export default function DashboardTasks({
+  initialTasks,
+  weekStart,
+}: {
+  initialTasks: Task[];
+  weekStart: number;
+}) {
+  const { preferences } = useResolvedPreferences();
+
   const {
     tasks,
     counts,
     loading,
     error,
     reload,
+    createTask,
     toggleTask,
-    filter,
     setFilter,
+    filter,
     todayProgress,
     submitDailyStatus,
     dailyStats,
   } = useTasks(HOME_SCOPE);
+
   const [busyId, setBusyId] = useState<string | null>(null);
 
   // Prefer the seeded rows until the client fetch resolves, so the first render
   // is never an empty hole.
   const rows = loading && tasks.length === 0 ? initialTasks : tasks;
 
-  // Today's tasks = the same predicate the Today tab uses, so the panel at the
-  // top and the "Due today" tile can never disagree.
   const todaysTasks = useMemo(
     () => todayProgress.filter((p) => matchesFilter(p.task, "today")),
     [todayProgress],
   );
 
-  // A 7-day window of the daily points, oldest first, for the progress panel.
-  const weekHistory = useMemo(
-    () => dailyStats.points.slice(-7),
-    [dailyStats],
+  const answeredToday = todaysTasks.filter((task) => task.today !== null).length;
+
+  // The trailing 7 daily points, oldest first, for the weekly chart.
+  const weekHistory = useMemo(() => dailyStats.points.slice(-7), [dailyStats]);
+
+  const todayPoint: DailyStatPoint | null = dailyStats.today ?? null;
+
+  const stats = useMemo(() => {
+    const open = rows.filter((t) => t.status !== "done");
+    return {
+      open: open.length,
+      dueToday: rows.filter((t) => matchesFilter(t, "today")).length,
+      overdue: rows.filter((t) => matchesFilter(t, "overdue")).length,
+      upcoming: rows.filter((t) => matchesFilter(t, "upcoming")).length,
+    };
+  }, [rows]);
+
+  // Upcoming: the next few open tasks due after today, soonest first.
+  const upcoming = useMemo(
+    () =>
+      rows
+        .filter((t) => matchesFilter(t, "upcoming") && t.status !== "done")
+        .slice(0, MAX_UPCOMING_ROWS),
+    [rows],
   );
 
   async function handleDailySubmit(task: TodayTaskProgress, status: DailyStatus) {
@@ -79,27 +140,6 @@ export default function DashboardTasks({ initialTasks }: { initialTasks: Task[] 
     }
   }
 
-  // Headline numbers. These deliberately reuse the SAME predicates the tab
-  // counts use (matchesFilter), so a tile can never drift from the tab counts
-  // on /tasks. All four come from real database rows.
-  const stats = useMemo(() => {
-    const open = rows.filter((t) => t.status !== "done");
-    return {
-      open: open.length,
-      dueToday: rows.filter((t) => matchesFilter(t, "today")).length,
-      overdue: rows.filter((t) => matchesFilter(t, "overdue")).length,
-      upcoming: rows.filter((t) => matchesFilter(t, "upcoming")).length,
-    };
-  }, [rows]);
-
-  // What to show in the panel: whatever tab is active, capped to MAX_ROWS.
-  const visible = useMemo(
-    () => rows.filter((t) => matchesFilter(t, filter)).slice(0, MAX_ROWS),
-    [rows, filter],
-  );
-
-  const totalForTab = counts[filter];
-
   async function handleToggle(task: Task) {
     setBusyId(task.id);
     try {
@@ -109,58 +149,56 @@ export default function DashboardTasks({ initialTasks }: { initialTasks: Task[] 
     }
   }
 
-  return (
-    <div className="space-y-5">
-      {error ? (
-        <div
-          role="alert"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-400/40 bg-red-500/10 px-3.5 py-2.5 text-sm text-red-200"
-        >
-          <span>{error}</span>
-          <button
-            type="button"
-            onClick={reload}
-            className="shrink-0 rounded-lg border border-red-400/40 bg-surface px-3 py-1.5 text-xs font-semibold text-red-200 transition-colors hover:bg-red-500/20"
-          >
-            Try again
-          </button>
-        </div>
-      ) : null}
+  const percent = todayPoint?.percent ?? null;
+  const ringTone =
+    percent === null ? "accent" : percent >= 70 ? "success" : percent >= 40 ? "warning" : "danger";
 
-      {/* ----------------------------- Stat cards ---------------------------- */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Open Tasks"
+  return (
+    <div className="space-y-4">
+      {error ? <ErrorBanner message={error} onRetry={reload} /> : null}
+
+      {/* ---------------------------- Quick add ---------------------------- */}
+      <QuickAddTask
+        onCreate={(values) => createTask(values)}
+        defaultCategory={preferences.default_category}
+        defaultPriority={preferences.default_priority}
+      />
+
+      {/* --------------------------- Metric strip -------------------------- */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile
+          label="Open tasks"
           value={stats.open}
           hint="Not finished yet"
-          icon={<StatIcon path="M4 5.5h16M4 12h16M4 18.5h10" tone="blue" />}
-          tone="blue"
+          href="/tasks"
+          icon={<ListChecksIcon className="h-4 w-4" />}
         />
-        <StatCard
-          label="Due Today"
+        <StatTile
+          label="Due today"
           value={stats.dueToday}
           hint="Deadline is today"
-          icon={<StatIcon path="M12 7.5v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z" tone="violet" />}
-          tone="violet"
+          href="/tasks"
+          icon={<CalendarIcon className="h-4 w-4" />}
         />
-        <StatCard
+        <StatTile
           label="Overdue"
           value={stats.overdue}
-          hint="Needs your attention"
-          icon={<StatIcon path="M12 8v5M12 16.5h.01M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z" tone="red" />}
-          tone="red"
+          hint={stats.overdue > 0 ? "Needs attention" : "All clear"}
+          tone={stats.overdue > 0 ? "danger" : "default"}
+          href="/tasks"
+          icon={<AlertIcon className="h-4 w-4" />}
         />
-        <StatCard
+        <StatTile
           label="Upcoming"
           value={stats.upcoming}
           hint="Due after today"
-          icon={<StatIcon path="M4 16.5 9 11l3.5 3.5L20 6.5M15 6.5h5v5" tone="green" />}
-          tone="green"
+          href="/tasks"
+          icon={<TrendingUpIcon className="h-4 w-4" />}
         />
       </div>
 
-      {/* ------------------ Today's Tasks + Today's Progress ----------------- */}
-      <div className="grid gap-5 lg:grid-cols-5">
+      {/* ---------------------- Today + progress --------------------------- */}
+      <div className="grid gap-4 lg:grid-cols-5">
         <div className="lg:col-span-3">
           <TodayTasksPanel
             tasks={todaysTasks}
@@ -171,256 +209,186 @@ export default function DashboardTasks({ initialTasks }: { initialTasks: Task[] 
         </div>
 
         <div className="lg:col-span-2">
-          <TodayProgressPanel
-            today={dailyStats.today}
-            history={weekHistory}
-            loading={loading && rows.length === 0}
-          />
+          <Card className="flex h-full flex-col">
+            <CardHeader
+              title="Today's progress"
+              action={<CardLink href="/tasks">Details</CardLink>}
+            />
+
+            {loading && rows.length === 0 ? (
+              <div className="animate-pulse space-y-3">
+                <div className="mx-auto h-24 w-24 rounded-full bg-surface-2" />
+                <div className="h-16 rounded-lg bg-surface-2" />
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-4">
+                  <ProgressRing
+                    value={percent}
+                    tone={ringTone}
+                    size={92}
+                    stroke={7}
+                    label="Today's completion"
+                  >
+                    <div>
+                      <p className="text-xl font-semibold leading-none tabular-nums text-fg">
+                        {percent === null ? "—" : `${percent}%`}
+                      </p>
+                      <p className="mt-0.5 text-3xs uppercase tracking-wide text-muted">
+                        done
+                      </p>
+                    </div>
+                  </ProgressRing>
+
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <Metric
+                      dot="bg-emerald-500"
+                      label="Yes"
+                      value={todayPoint?.yes ?? 0}
+                    />
+                    <Metric dot="bg-red-500" label="No" value={todayPoint?.no ?? 0} />
+                    <Metric
+                      dot="bg-border-strong"
+                      label="Not answered"
+                      value={Math.max(
+                        0,
+                        (todayPoint?.total ?? 0) -
+                        ((todayPoint?.yes ?? 0) + (todayPoint?.no ?? 0)),
+                      )}
+                    />
+                  </div>
+                </div>
+
+                <p className="mt-3 text-2xs leading-relaxed text-muted">
+                  {answeredToday === 0
+                    ? "Answer today's tasks with Yes or No — the percentage only counts answered days."
+                    : `${answeredToday} of ${todaysTasks.length} answered. Unanswered days never count as misses.`}
+                </p>
+
+                <div className="mt-auto pt-4">
+                  <WeeklyProgress
+                    points={weekHistory}
+                    windowPercent={dailyStats.windowPercent}
+                  />
+                </div>
+              </>
+            )}
+          </Card>
         </div>
       </div>
 
-      {/* ---------------- Active Challenges + Recent Tasks ------------------- */}
-      <div className="grid gap-5 lg:grid-cols-5">
-        <div className="lg:col-span-2">
-          <DashboardChallenges />
-        </div>
-
-        {/* Recent tasks, with tabs and a link through to the full Tasks page. */}
-        <section className="rounded-2xl border border-border bg-surface p-5 lg:col-span-3">
+      {/* ----------------- Upcoming + Habits + Challenges ------------------ */}
+      <div className="grid gap-4 lg:grid-cols-4">
+        <Card className="lg:col-span-2">
           <CardHeader
-            title="Recent Tasks"
-            action={
-              <a href="/tasks" className="text-xs font-semibold text-accent hover:underline">
-                View all
-              </a>
-            }
+            title="Upcoming"
+            description="Next deadlines, soonest first"
+            action={<CardLink href="/tasks">View all</CardLink>}
           />
 
-          <div className="mb-4 flex gap-1 overflow-x-auto">
-            {TABS.map((key) => {
-              const selected = filter === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => setFilter(key)}
-                  className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${selected
-                      ? "bg-accent text-white"
-                      : "text-muted hover:bg-white/5 hover:text-white"
-                    }`}
-                >
-                  {key}
-                </button>
-              );
-            })}
-          </div>
+          {upcoming.length === 0 ? (
+            <EmptyState
+              size="sm"
+              icon={<CalendarIcon className="h-5 w-5" />}
+              title={loading ? "Loading…" : "Nothing upcoming"}
+              hint="Tasks due after today will show up here with their due date."
+              href="/tasks"
+              actionLabel="Plan something"
+            />
+          ) : (
+            <DashboardTaskList
+              tasks={upcoming}
+              loading={false}
+              busyId={busyId}
+              onToggle={handleToggle}
+            />
+          )}
 
-          <DashboardTaskList
-            tasks={visible}
-            loading={loading && rows.length === 0}
-            busyId={busyId}
-            onToggle={handleToggle}
-          />
-
-          {totalForTab > visible.length ? (
-            <p className="mt-3 text-xs text-muted">
-              Showing {visible.length} of {totalForTab}.{" "}
-              <a href="/tasks" className="font-semibold text-accent hover:underline">
+          {counts.upcoming > upcoming.length ? (
+            <p className="mt-3 text-2xs text-muted">
+              Showing {upcoming.length} of {counts.upcoming}.{" "}
+              <Link href="/tasks" className="font-medium text-accent hover:underline">
                 See the rest
-              </a>
+              </Link>
             </p>
           ) : null}
-        </section>
+        </Card>
+
+        <DashboardHabits weekStart={weekStart} />
+        <DashboardChallenges />
       </div>
+
+      {/* ------------------------ All tasks, filtered ---------------------- */}
+      <Card>
+        <CardHeader
+          title="All tasks"
+          description="Every task, narrowed by the tab you pick"
+          action={<CardLink href="/tasks">Open tasks</CardLink>}
+        />
+
+        <SegmentedControl
+          ariaLabel="Filter all tasks"
+          value={filter}
+          onChange={setFilter}
+          options={TABS.map((key) => ({
+            value: key,
+            label: TAB_LABELS[key],
+            badge: (
+              <span className="tabular-nums text-2xs text-muted">{counts[key]}</span>
+            ),
+          }))}
+          className="mb-3"
+        />
+
+        <DashboardTaskList
+          tasks={rows.filter((t) => matchesFilter(t, filter)).slice(0, MAX_TODAY_ROWS)}
+          loading={loading && rows.length === 0}
+          busyId={busyId}
+          onToggle={handleToggle}
+        />
+
+        {counts[filter] > MAX_TODAY_ROWS ? (
+          <p className="mt-3 text-2xs text-muted">
+            Showing {MAX_TODAY_ROWS} of {counts[filter]}.{" "}
+            <Link href="/tasks" className="font-medium text-accent hover:underline">
+              See the rest
+            </Link>
+          </p>
+        ) : null}
+
+        <div className="mt-4 border-t border-border pt-3">
+          <div className="mb-1.5 flex items-center justify-between text-2xs text-muted">
+            <span>Completed</span>
+            <span className="tabular-nums">
+              {counts.all - stats.open} of {counts.all}
+            </span>
+          </div>
+          <ProgressBar
+            value={counts.all - stats.open}
+            max={Math.max(counts.all, 1)}
+            tone="success"
+            label="Tasks completed across all tasks"
+          />
+        </div>
+      </Card>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Stat card
-// ---------------------------------------------------------------------------
-
-const TONES = {
-  blue: {
-    ring: "border-blue2/30",
-    glow: "from-blue2/25",
-    text: "text-blue2",
-  },
-  violet: {
-    ring: "border-brand-500/30",
-    glow: "from-brand-500/25",
-    text: "text-brand-400",
-  },
-  red: {
-    ring: "border-red2/30",
-    glow: "from-red2/25",
-    text: "text-red2",
-  },
-  green: {
-    ring: "border-green2/30",
-    glow: "from-green2/25",
-    text: "text-green2",
-  },
-} as const;
-
-/** A single headline number with its icon, accent and hover lift. */
-function StatCard({
+function Metric({
+  dot,
   label,
   value,
-  hint,
-  icon,
-  tone,
 }: {
+  dot: string;
   label: string;
   value: number;
-  hint: string;
-  icon: React.ReactNode;
-  tone: keyof typeof TONES;
 }) {
-  const t = TONES[tone];
   return (
-    <div
-      className={`group relative overflow-hidden rounded-2xl border ${t.ring} bg-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-card sm:p-5`}
-    >
-      {/* Corner glow that brightens on hover. */}
-      <span
-        className={`pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-gradient-to-br ${t.glow} to-transparent opacity-60 transition-opacity group-hover:opacity-100`}
-        aria-hidden="true"
-      />
-      <div className="relative flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-muted">{label}</p>
-          <p className="mt-1 text-3xl font-semibold leading-none text-white">{value}</p>
-          <p className="mt-1.5 truncate text-xs text-muted">{hint}</p>
-        </div>
-        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${t.text}`}>
-          {icon}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/** Stroke icon for the stat cards, tinted by tone. */
-function StatIcon({ path, tone }: { path: string; tone: keyof typeof TONES }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.75}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className={`h-5 w-5 ${TONES[tone].text}`}
-    >
-      <path d={path} />
-    </svg>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Today's Progress panel
-// ---------------------------------------------------------------------------
-
-/**
- * Daily completion: today's percentage, the yes/no/not-answered counts, and the
- * 7-day chart. All of it derives from `dailyStats`, which is computed from the
- * persisted task_daily_logs by the same logic the Tasks page uses.
- */
-function TodayProgressPanel({
-  today,
-  history,
-  loading,
-}: {
-  /** Today's daily point from the hook, or null before anything is fetched. */
-  today: DailyStatPoint | null;
-  /** The last 7 daily points, oldest first. */
-  history: DailyStatPoint[];
-  loading: boolean;
-}) {
-  const percent = today?.percent ?? null;
-  const yes = today?.yes ?? 0;
-  const no = today?.no ?? 0;
-  const total = today?.total ?? 0;
-  const notAnswered = Math.max(0, total - (yes + no));
-
-  const chartHistory = history.map((point) => ({
-    date: point.date,
-    completed: point.percent === 100,
-  }));
-
-  return (
-    <section className="rounded-2xl border border-border bg-surface p-5" aria-busy={loading}>
-      <CardHeader title="Today's Progress" />
-
-      {loading ? (
-        <div className="animate-pulse space-y-3">
-          <div className="h-10 rounded-xl bg-app" />
-          <div className="h-16 rounded-xl bg-app" />
-          <div className="h-14 rounded-xl bg-app" />
-        </div>
-      ) : (
-        <>
-          {/* Headline percentage */}
-          <div className="rounded-xl border border-border bg-app/70 px-4 py-3.5">
-            <div className="flex items-end justify-between gap-3">
-              <p className="text-xs font-medium text-muted">Completion today</p>
-              <p
-                className={`text-3xl font-semibold leading-none ${percent === null
-                    ? "text-slate-400"
-                    : percent >= 70
-                      ? "text-green2"
-                      : percent >= 40
-                        ? "text-amber-400"
-                        : "text-red2"
-                  }`}
-              >
-                {percent === null ? "—" : `${percent}%`}
-              </p>
-            </div>
-            <p className="mt-1.5 text-xs text-muted">
-              {percent === null
-                ? "Nothing answered yet today."
-                : `${yes} yes and ${no} no out of ${total} open task${total === 1 ? "" : "s"}.`}
-            </p>
-          </div>
-
-          {/* Yes / No / Not answered counts */}
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            <Count label="Yes" value={yes} dot="bg-green2" />
-            <Count label="No" value={no} dot="bg-red2" />
-            <Count label="Not answered" value={notAnswered} dot="bg-border" />
-          </div>
-
-          {/* 7-day chart, real data only */}
-          <div className="mt-4">
-            <CompletionChart
-              history={chartHistory}
-              dayCount={7}
-              height="h-20"
-              label="Last 7 days completion"
-              showAxis
-            />
-          </div>
-
-          <p className="mt-3 border-t border-border pt-3 text-[11px] leading-relaxed text-muted">
-            Green = Yes, red = No, grey = not answered. The percentage is over
-            the days you answered, so unanswered days never count as misses.
-          </p>
-        </>
-      )}
-    </section>
-  );
-}
-
-function Count({ label, value, dot }: { label: string; value: number; dot: string }) {
-  return (
-    <div className="rounded-xl border border-border bg-app/70 px-2.5 py-2 text-center">
-      <span className={`mx-auto mb-1 block h-2 w-2 rounded-full ${dot}`} aria-hidden="true" />
-      <p className="text-lg font-semibold leading-none text-white">{value}</p>
-      <p className="mt-0.5 truncate text-[10px] text-muted">{label}</p>
+    <div className="flex items-center gap-2">
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate text-2xs text-muted">{label}</span>
+      <span className="tabular-nums text-xs font-medium text-fg">{value}</span>
     </div>
   );
 }

@@ -16,9 +16,16 @@ const config: Config = {
       // light/dark swap happen in a single place.
       colors: {
         app: "rgb(var(--app-bg) / <alpha-value>)",
-        surface: "rgb(var(--surface) / <alpha-value>)",
-        border: "rgb(var(--border) / <alpha-value>)",
+        surface: {
+          DEFAULT: "rgb(var(--surface) / <alpha-value>)",
+          2: "rgb(var(--surface-2) / <alpha-value>)",
+        },
+        border: {
+          DEFAULT: "rgb(var(--border) / <alpha-value>)",
+          strong: "rgb(var(--border-strong) / <alpha-value>)",
+        },
         muted: "rgb(var(--muted) / <alpha-value>)",
+        fg: "rgb(var(--fg) / <alpha-value>)",
         accent: {
           DEFAULT: "rgb(var(--accent) / <alpha-value>)",
           soft: "rgb(var(--accent-soft) / <alpha-value>)",
@@ -53,10 +60,30 @@ const config: Config = {
       spacing: {
         18: "4.5rem",
       },
+      // Layered rather than single-offset shadows: a 1px contact shadow plus a
+      // wide, very soft ambient one. That is what reads as "premium" instead of
+      // a heavy drop shadow.
       boxShadow: {
         // Soft, wide glow used behind the hero and under the auth card.
         glow: "0 0 80px -20px rgba(116, 104, 255, 0.55)",
         card: "0 24px 60px -20px rgba(4, 8, 24, 0.85)",
+        xs: "0 1px 2px 0 rgb(var(--shadow-color) / 0.05)",
+        panel:
+          "0 1px 2px 0 rgb(var(--shadow-color) / 0.04), 0 1px 3px 0 rgb(var(--shadow-color) / 0.03)",
+        raised:
+          "0 1px 2px 0 rgb(var(--shadow-color) / 0.05), 0 8px 24px -12px rgb(var(--shadow-color) / 0.14)",
+        overlay:
+          "0 12px 32px -8px rgb(var(--shadow-color) / 0.18), 0 4px 12px -4px rgb(var(--shadow-color) / 0.1)",
+      },
+      // A dedicated 13px step for dense metadata rows; keeps type hierarchy
+      // readable without dropping to 11px everywhere.
+      fontSize: {
+        "2xs": ["0.6875rem", { lineHeight: "1rem" }],
+        "3xs": ["0.625rem", { lineHeight: "0.875rem" }],
+      },
+      transitionTimingFunction: {
+        // Consistent, slightly snappy easing for all micro-interactions.
+        smooth: "cubic-bezier(0.32, 0.72, 0, 1)",
       },
       keyframes: {
         // Slow vertical drift for the floating dashboard preview.
@@ -79,6 +106,7 @@ const config: Config = {
         // Inter is used when the OS already has it.
         sans: [
           "Inter",
+          "Geist",
           "ui-sans-serif",
           "system-ui",
           "-apple-system",

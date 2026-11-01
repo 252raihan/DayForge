@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Modal from "@/components/tasks/Modal";
-import { Field, FormMessage, SubmitButton } from "@/components/ui/Form";
+import {
+  Button,
+  ChoiceChip,
+  Field,
+  FormMessage,
+  SelectField,
+  TextareaField,
+} from "@/components/ui";
 import { localInputToUtc, utcToLocalInput, WEEKDAY_LABELS } from "@/hooks/useTasks";
 import type { RecurrenceType, Task, TaskInsert, TaskPriority } from "@/types";
 
@@ -170,193 +177,130 @@ export default function TaskFormModal({
           required
         />
 
-        {/* Textarea rather than the single-line Field component. */}
-        <div className="space-y-1.5">
-          <label htmlFor="description" className="block text-sm font-medium">
-            Description <span className="font-normal text-muted">(optional)</span>
-          </label>
-          <textarea
-            id="description"
-            name="description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            placeholder="Any details worth remembering..."
-            aria-invalid={errors.description ? true : undefined}
-            aria-describedby={errors.description ? "description-error" : undefined}
-            className={`w-full resize-y rounded-xl border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors placeholder:text-muted/70 focus:ring-2 focus:ring-accent/40 ${errors.description
-                ? "border-red-400 focus:border-red-500"
-                : "border-border focus:border-accent"
-              }`}
-          />
-          {errors.description ? (
-            <p id="description-error" className="text-xs font-medium text-red-600 dark:text-red-400">
-              {errors.description}
-            </p>
-          ) : null}
-        </div>
+        <TextareaField
+          id="description"
+          label="Description"
+          optional
+          value={description}
+          onChange={setDescription}
+          rows={3}
+          placeholder="Any details worth remembering..."
+          error={errors.description}
+        />
 
         {/* Due date + time. The value is local; converted to UTC on submit. */}
         <div className="space-y-1.5">
-          <label htmlFor="dueAt" className="block text-sm font-medium">
-            Due date and time <span className="font-normal text-muted">(optional)</span>
-          </label>
-          <input
+          <Field
             id="dueAt"
-            name="dueAt"
+            label="Due date and time"
+            optional
             type="datetime-local"
             value={dueAt}
-            onChange={(e) => setDueAt(e.target.value)}
-            className="w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/40"
+            onChange={setDueAt}
+            hint="Shown in your local timezone."
           />
-          <p className="text-xs text-muted">
-            Shown in your local timezone.
-            {dueAt ? (
-              <button
-                type="button"
-                onClick={() => setDueAt("")}
-                className="ml-1.5 font-medium text-accent hover:underline"
-              >
-                Clear
-              </button>
-            ) : null}
-          </p>
+          {dueAt ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDueAt("")}
+              className="-mt-1 px-0 text-accent hover:bg-transparent hover:underline"
+            >
+              Clear due date
+            </Button>
+          ) : null}
         </div>
 
-        {/* Priority: a radio group, since there are only three options. */}
+        {/* Priority: a chip group, since there are only three options. */}
         <fieldset className="space-y-1.5">
-          <legend className="block text-sm font-medium">Priority</legend>
+          <legend className="block text-sm font-medium text-fg">Priority</legend>
           <div className="flex gap-2">
-            {PRIORITIES.map((p) => {
-              const selected = priority === p;
-              return (
-                <label
-                  key={p}
-                  className={`flex-1 cursor-pointer rounded-xl border px-3 py-2 text-center text-sm font-medium capitalize transition-colors ${selected
-                      ? "border-accent bg-accent-soft text-accent"
-                      : "border-border text-muted hover:bg-accent-soft/50"
-                    }`}
-                >
-                  <input
-                    type="radio"
-                    name="priority"
-                    value={p}
-                    checked={selected}
-                    onChange={() => setPriority(p)}
-                    className="sr-only"
-                  />
-                  {p}
-                </label>
-              );
-            })}
+            {PRIORITIES.map((p) => (
+              <ChoiceChip
+                key={p}
+                selected={priority === p}
+                onClick={() => setPriority(p)}
+                className="flex-1 text-center capitalize"
+              >
+                {p}
+              </ChoiceChip>
+            ))}
           </div>
         </fieldset>
 
         {/* Category: free text with suggestions. */}
-        <div className="space-y-1.5">
-          <label htmlFor="category" className="block text-sm font-medium">
-            Category
-          </label>
-          <input
-            id="category"
-            name="category"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            list="category-suggestions"
-            placeholder="Personal"
-            aria-invalid={errors.category ? true : undefined}
-            className={`w-full rounded-xl border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors placeholder:text-muted/70 focus:ring-2 focus:ring-accent/40 ${errors.category
-                ? "border-red-400 focus:border-red-500"
-                : "border-border focus:border-accent"
-              }`}
-          />
-          <datalist id="category-suggestions">
-            {CATEGORY_SUGGESTIONS.map((c) => (
-              <option key={c} value={c} />
-            ))}
-          </datalist>
-          {errors.category ? (
-            <p className="text-xs font-medium text-red-600 dark:text-red-400">
-              {errors.category}
-            </p>
-          ) : null}
-        </div>
+        <Field
+          id="category"
+          label="Category"
+          value={category}
+          onChange={setCategory}
+          list="category-suggestions"
+          placeholder="Personal"
+          error={errors.category}
+        />
+        <datalist id="category-suggestions">
+          {CATEGORY_SUGGESTIONS.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
 
         {/* Repeat: None / Daily / Weekly / Custom days. */}
-        <div className="space-y-1.5">
-          <label htmlFor="recurrence" className="block text-sm font-medium">
-            Repeat
-          </label>
-          <select
-            id="recurrence"
-            name="recurrence"
-            value={recurrenceType}
-            onChange={(e) => setRecurrenceType(e.target.value as RecurrenceType)}
-            className="w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/40"
-          >
-            {RECURRENCE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+        <SelectField
+          id="recurrence"
+          label="Repeat"
+          value={recurrenceType}
+          onChange={(value) => setRecurrenceType(value as RecurrenceType)}
+        >
+          {RECURRENCE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </SelectField>
 
-          {/* Weekday picker, only relevant to "Custom days". */}
-          {recurrenceType === "custom" ? (
-            <fieldset className="pt-1">
-              <legend className="mb-1.5 text-xs text-muted">Repeat on</legend>
-              <div className="flex flex-wrap gap-1.5">
-                {WEEKDAY_LABELS.map((label, day) => {
-                  const selected = recurrenceDays.includes(day);
-                  return (
-                    <label
-                      key={label}
-                      className={`cursor-pointer rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${selected
-                          ? "border-accent bg-accent-soft text-accent"
-                          : "border-border text-muted hover:bg-accent-soft/50"
-                        }`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="sr-only"
-                        checked={selected}
-                        onChange={() => toggleDay(day)}
-                      />
-                      {label}
-                    </label>
-                  );
-                })}
-              </div>
-              {errors.recurrence ? (
-                <p className="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">
-                  {errors.recurrence}
-                </p>
-              ) : null}
-            </fieldset>
-          ) : null}
+        {/* Weekday picker, only relevant to "Custom days". */}
+        {recurrenceType === "custom" ? (
+          <fieldset className="pt-1">
+            <legend className="mb-1.5 text-xs text-muted">Repeat on</legend>
+            <div className="flex flex-wrap gap-1.5">
+              {WEEKDAY_LABELS.map((label, day) => (
+                <ChoiceChip
+                  key={label}
+                  selected={recurrenceDays.includes(day)}
+                  onClick={() => toggleDay(day)}
+                  className="px-2.5 py-1.5 text-xs"
+                >
+                  {label}
+                </ChoiceChip>
+              ))}
+            </div>
+            {errors.recurrence ? (
+              <p className="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">
+                {errors.recurrence}
+              </p>
+            ) : null}
+          </fieldset>
+        ) : null}
 
-          {/* A repeating task needs a due date to anchor the next occurrence. */}
-          {recurrenceType !== "none" && !dueAt ? (
-            <p className="text-xs text-muted">
-              Add a due date above so the next occurrence can be scheduled.
-            </p>
-          ) : null}
-        </div>
+        {/* A repeating task needs a due date to anchor the next occurrence. */}
+        {recurrenceType !== "none" && !dueAt ? (
+          <p className="text-xs text-muted">
+            Add a due date above so the next occurrence can be scheduled.
+          </p>
+        ) : null}
 
         <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={pending}
-            className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-accent-soft hover:text-accent disabled:opacity-60"
-          >
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
             Cancel
-          </button>
-          <div className="sm:w-40">
-            <SubmitButton pending={pending} pendingLabel="Saving...">
-              {isEdit ? "Save changes" : "Add task"}
-            </SubmitButton>
-          </div>
+          </Button>
+          <Button
+            type="submit"
+            loading={pending}
+            loadingLabel="Saving..."
+            className="sm:w-40"
+          >
+            {isEdit ? "Save changes" : "Add task"}
+          </Button>
         </div>
       </form>
     </Modal>

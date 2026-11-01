@@ -1,18 +1,34 @@
-import Card from "@/components/ui/Card";
+import { cn } from "@/lib/cn";
 
-// A single headline number on the dashboard (due today, overdue, ...).
-// `tone` switches the accent, and the value is always labelled in words - the
-// colour alone is never the message.
+// A single headline number on the dashboard, habits and challenges pages.
+//
+// `tone` switches only the value colour and the icon tint - never the card
+// fill - so a row of four tiles stays calm while the numbers still carry
+// meaning. The label is always in words, so colour is never the only signal.
 
-type Tone = "default" | "danger" | "warning" | "success";
+type Tone = "default" | "danger" | "warning" | "success" | "info";
 
-// `text-foreground` is not a token in this project - the default body colour is
-// inherited, so the neutral tone leaves the value uncoloured.
-const TONES: Record<Tone, { value: string; badge: string }> = {
-  default: { value: "", badge: "bg-accent-soft text-accent" },
-  danger: { value: "text-red-600 dark:text-red-400", badge: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" },
-  warning: { value: "text-amber-600 dark:text-amber-400", badge: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" },
-  success: { value: "text-emerald-600 dark:text-emerald-400", badge: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" },
+const TONES: Record<Tone, { value: string; icon: string }> = {
+  default: {
+    value: "text-fg",
+    icon: "border-border bg-surface-2 text-muted",
+  },
+  danger: {
+    value: "text-red-600 dark:text-red-400",
+    icon: "border-red-200/70 bg-red-50 text-red-600 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-400",
+  },
+  warning: {
+    value: "text-amber-600 dark:text-amber-400",
+    icon: "border-amber-200/70 bg-amber-50 text-amber-600 dark:border-amber-900/60 dark:bg-amber-950/50 dark:text-amber-400",
+  },
+  success: {
+    value: "text-emerald-600 dark:text-emerald-400",
+    icon: "border-emerald-200/70 bg-emerald-50 text-emerald-600 dark:border-emerald-900/60 dark:bg-emerald-950/50 dark:text-emerald-400",
+  },
+  info: {
+    value: "text-blue-600 dark:text-blue-400",
+    icon: "border-blue-200/70 bg-blue-50 text-blue-600 dark:border-blue-900/60 dark:bg-blue-950/50 dark:text-blue-400",
+  },
 };
 
 export default function StatTile({
@@ -20,27 +36,69 @@ export default function StatTile({
   value,
   hint,
   tone = "default",
+  icon,
+  href,
+  className,
 }: {
   label: string;
   /** A number, or a short string when the tile reads better as "3/5". */
   value: number | string;
   hint?: string;
   tone?: Tone;
+  /** Optional glyph shown in the tinted square on the right. */
+  icon?: React.ReactNode;
+  /** Optional: makes the whole tile a link (used for the dashboard counters). */
+  href?: string;
+  className?: string;
 }) {
   const styles = TONES[tone];
 
-  return (
-    <Card className="p-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
-        <span className={`grid h-6 min-w-6 place-items-center rounded-lg px-1.5 text-xs font-semibold ${styles.badge}`}>
+  const body = (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <p className="truncate text-xs font-medium text-muted">{label}</p>
+        <p
+          className={cn(
+            "mt-1.5 text-2xl font-semibold leading-none tracking-tight tabular-nums",
+            styles.value,
+          )}
+        >
           {value}
-        </span>
+        </p>
+        {hint ? <p className="mt-1.5 truncate text-[11px] text-muted">{hint}</p> : null}
       </div>
-      <p className={`mt-2 text-2xl font-semibold tracking-tight ${styles.value}`}>
-        {value}
-      </p>
-      {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
-    </Card>
+
+      {icon ? (
+        <span
+          className={cn(
+            "grid h-8 w-8 shrink-0 place-items-center rounded-lg border",
+            styles.icon,
+          )}
+          aria-hidden="true"
+        >
+          {icon}
+        </span>
+      ) : null}
+    </div>
   );
+
+  const shell =
+    "rounded-xl border border-border bg-surface p-4 shadow-panel transition-colors";
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        className={cn(
+          shell,
+          "block hover:border-border-strong hover:bg-surface-2/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+          className,
+        )}
+      >
+        {body}
+      </a>
+    );
+  }
+
+  return <div className={cn(shell, className)}>{body}</div>;
 }

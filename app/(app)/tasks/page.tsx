@@ -2,13 +2,23 @@
 
 import { useMemo, useState } from "react";
 import { PageHeader } from "@/components";
-import { EmptyState, ErrorBanner, LoadingRows } from "@/components/ui";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorBanner,
+  LoadingRows,
+} from "@/components/ui";
 import TaskTabs from "@/components/tasks/TaskTabs";
 import TaskToolbar from "@/components/tasks/TaskToolbar";
 import TaskCard from "@/components/tasks/TaskCard";
 import TaskFormModal from "@/components/tasks/TaskFormModal";
 import ConfirmDeleteModal from "@/components/tasks/ConfirmDeleteModal";
-import { formatDueDate } from "@/components/tasks/task-utils";
+import { formatDueDate, PriorityBadge } from "@/components/tasks/task-utils";
+import { PlusIcon, ListChecksIcon } from "@/components/icons";
 import { useTasks, matchesFilter, ALL_STATUSES } from "@/hooks/useTasks";
 import { useResolvedPreferences } from "@/lib/preferences";
 import { HOME_SCOPE } from "@/lib/home-scope";
@@ -178,32 +188,16 @@ export default function TasksPage() {
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <PageHeader
-          title="Tasks"
-          description="Assignments and to-dos, grouped by course and due date."
-        />
-
-        <button
-          type="button"
-          onClick={openAdd}
-          className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-        >
-          <svg
-            className="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          Add task
-        </button>
-      </div>
+      <PageHeader
+        title="Tasks"
+        description="Assignments and to-dos, grouped by course and due date."
+        actions={
+          <Button onClick={openAdd}>
+            <PlusIcon className="h-4 w-4" strokeWidth={2} />
+            Add task
+          </Button>
+        }
+      />
 
       <div className="space-y-4">
         {/* Search, filters and sort. They narrow the list that the tabs then
@@ -230,68 +224,87 @@ export default function TasksPage() {
             overrides those two refinements only: search, priority, category
             and scope all still apply. */}
         {todaysTasks.length > 0 ? (
-          <section className="rounded-2xl border border-border bg-surface p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold tracking-tight">Due today</h2>
-              <p className="text-xs text-muted">
-                {todaysAnswered}/{todaysTasks.length} answered
-                {todaysAnswered > 0 ? ` · ${todaysYes} yes` : ""}
-              </p>
-            </div>
+          <Card>
+            <CardHeader
+              title="Due today"
+              icon={<ListChecksIcon className="h-4 w-4" />}
+              description="Answer these now — the dashboard and challenges count the same answers."
+              action={
+                <div className="flex items-center gap-2">
+                  <Badge tone={todaysAnswered === todaysTasks.length ? "success" : "neutral"}>
+                    {todaysAnswered}/{todaysTasks.length} answered
+                  </Badge>
+                  {todaysAnswered > 0 ? (
+                    <Badge tone="success" dot>
+                      {todaysYes} yes
+                    </Badge>
+                  ) : null}
+                </div>
+              }
+            />
 
-            <ul className="space-y-2">
+            <ul className="-mx-1 divide-y divide-border/70">
               {todaysTasks.map((task) => {
                 const today = todayStatusByTask.get(task.id) ?? null;
                 return (
                   <li
                     key={task.id}
-                    className={`flex flex-col gap-2 rounded-xl border border-border bg-app px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between ${
+                    className={`flex flex-col gap-2 px-1 py-2.5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between ${
                       busyIds.includes(task.id) ? "opacity-60" : ""
                     }`}
                   >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{task.title}</p>
-                      <p className="mt-0.5 text-xs text-muted">
-                        {formatDueDate(task.due_at)} · {task.category}
-                      </p>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                          today === "yes"
+                            ? "bg-emerald-500"
+                            : today === "no"
+                              ? "bg-red-500"
+                              : "bg-border-strong"
+                        }`}
+                        aria-hidden="true"
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-medium text-fg">{task.title}</p>
+                        <p className="mt-0.5 truncate text-2xs text-muted">
+                          {formatDueDate(task.due_at)} · {task.category}
+                        </p>
+                      </div>
+                      <PriorityBadge priority={task.priority} />
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-2">
-                      <button
-                        type="button"
+                    <div className="flex shrink-0 items-center gap-1.5 pl-4 sm:pl-0">
+                      <Button
+                        variant="success"
+                        size="sm"
+                        active={today === "yes"}
                         disabled={busyIds.includes(task.id)}
                         aria-pressed={today === "yes"}
                         onClick={() => handleMarkToday(task, "yes")}
-                        className={`min-w-14 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed ${
-                          today === "yes"
-                            ? "border-emerald-500 bg-emerald-500 text-white"
-                            : "border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
-                        }`}
+                        className="h-8 min-w-14"
                       >
                         Yes
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        variant="dangerSubtle"
+                        size="sm"
+                        active={today === "no"}
                         disabled={busyIds.includes(task.id)}
                         aria-pressed={today === "no"}
                         onClick={() => handleMarkToday(task, "no")}
-                        className={`min-w-14 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed ${
-                          today === "no"
-                            ? "border-red-500 bg-red-500 text-white"
-                            : "border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
-                        }`}
+                        className="h-8 min-w-14"
                       >
                         No
-                      </button>
+                      </Button>
                     </div>
                   </li>
                 );
               })}
             </ul>
-          </section>
+          </Card>
         ) : null}
 
-        <TaskTabs active={filter} onChange={setFilter} counts={counts} />
+        <TaskTabs active={filter} onChange={setFilter} counts={counts} className="w-fit" />
 
         {/* Only shown when a Supabase query actually failed. The message comes
             straight from Supabase, and Retry re-runs the query. */}
@@ -299,19 +312,7 @@ export default function TasksPage() {
 
         {/* A rejected row action (for example a Yes the database refused). */}
         {actionError ? (
-          <div
-            role="alert"
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
-          >
-            <span>{actionError}</span>
-            <button
-              type="button"
-              onClick={() => setActionError(null)}
-              className="shrink-0 rounded-lg border border-red-300 bg-surface px-3 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950"
-            >
-              Dismiss
-            </button>
-          </div>
+          <Alert onDismiss={() => setActionError(null)}>{actionError}</Alert>
         ) : null}
 
         {loading ? (
@@ -338,7 +339,7 @@ export default function TasksPage() {
             }
           />
         ) : (
-          <ul className="space-y-3">
+          <ul className="space-y-2.5">
             {tasks.map((task) => (
               <TaskCard
                 key={task.id}

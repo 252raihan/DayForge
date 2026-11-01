@@ -1,7 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CardHeader } from "@/components/ui/Card";
+import Link from "next/link";
+import {
+  Alert,
+  Badge,
+  Button,
+  buttonStyles,
+  Card,
+  CardHeader,
+  CardLink,
+  ErrorBanner,
+  ProgressBar,
+} from "@/components/ui";
+import { ChallengesIcon } from "@/components/icons";
 import { useChallenges } from "@/hooks/useChallenges";
 import type { ChallengeGoalType, ChallengeProgress } from "@/types";
 
@@ -73,70 +85,54 @@ export default function DashboardChallenges() {
   }
 
   return (
-    <section className="rounded-2xl border border-border bg-surface p-5">
+    <Card>
       <CardHeader
         title="Challenges"
-        action={
-          <a href="/challenges" className="text-xs font-semibold text-accent hover:underline">
-            View all
-          </a>
-        }
+        icon={<ChallengesIcon className="h-4 w-4" />}
+        action={<CardLink href="/challenges">View all</CardLink>}
       />
 
       {error ? (
-        <div
-          role="alert"
-          className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-xs font-medium text-red-800 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
-        >
-          <span>{error}</span>
-          <button
-            type="button"
-            onClick={reload}
-            className="shrink-0 rounded-lg border border-red-300 bg-surface px-3 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950"
-          >
-            Try again
-          </button>
+        <div className="mb-3">
+          <ErrorBanner message={error} onRetry={reload} />
         </div>
       ) : null}
 
       {actionError ? (
-        <p
-          role="alert"
-          className="mb-3 rounded-xl border border-red-300 bg-red-50 px-3.5 py-2 text-xs font-medium text-red-800 dark:border-red-800 dark:bg-red-950/50 dark:text-red-300"
-        >
+        <Alert className="mb-3" onDismiss={() => setActionError(null)}>
           {actionError}
-        </p>
+        </Alert>
       ) : null}
 
       {loading ? (
         <ul className="space-y-2" aria-busy="true" aria-label="Loading challenges">
           {Array.from({ length: 2 }, (_, i) => (
-            <li key={i} className="h-20 animate-pulse rounded-xl border border-border bg-app" />
+            <li key={i} className="h-20 animate-pulse rounded-lg border border-border bg-surface-2" />
           ))}
         </ul>
       ) : progress.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-app px-4 py-5 text-center">
-          <p className="text-sm font-medium">No challenges yet</p>
-          <p className="mx-auto mt-1 max-w-sm text-xs text-muted">
+        <div className="rounded-lg border border-dashed border-border bg-surface-2 px-4 py-5 text-center">
+          <p className="text-[13px] font-medium text-fg">No challenges yet</p>
+          <p className="mx-auto mt-1 max-w-sm text-2xs leading-relaxed text-muted">
             Set a time-boxed goal and DayForge counts your progress from real task,
             habit and check-in records.
           </p>
-          <a
+          <Link
             href="/challenges"
-            className="mt-3 inline-block rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+            className={buttonStyles({ variant: "secondary", size: "sm", className: "mt-3" })}
           >
             Create a challenge
-          </a>
+          </Link>
         </div>
       ) : visible.length === 0 ? (
         // Everything is finished or closed: say what happened, do not show an
         // empty box that looks broken.
-        <p className="rounded-xl border border-border bg-app px-3.5 py-3 text-xs text-muted">
+        <p className="rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-2xs leading-relaxed text-muted">
           {counts.completed} completed and {counts.expired} expired. Nothing running right
-          now -{" "}
-          <a href="/challenges" className="font-semibold text-accent hover:underline">
+          now —{" "}
+          <Link href="/challenges" className="font-medium text-accent hover:underline">
             start a new challenge
-          </a>
+          </Link>
           .
         </p>
       ) : (
@@ -153,21 +149,21 @@ export default function DashboardChallenges() {
       )}
 
       {!loading && progress.length > 0 ? (
-        <p className="mt-3 border-t border-border pt-3 text-xs text-muted">
+        <p className="mt-3 border-t border-border pt-3 text-2xs text-muted">
           {counts.active} active
           {counts.completed > 0 ? ` · ${counts.completed} completed` : ""}
           {counts.expired > 0 ? ` · ${counts.expired} expired` : ""}
           {progress.length > visible.length ? (
             <>
               {" · "}
-              <a href="/challenges" className="font-semibold text-accent hover:underline">
+              <Link href="/challenges" className="font-medium text-accent hover:underline">
                 See all {progress.length}
-              </a>
+              </Link>
             </>
           ) : null}
         </p>
       ) : null}
-    </section>
+    </Card>
   );
 }
 
@@ -186,28 +182,25 @@ function DashboardChallengeRow({
 
   const statusLabel =
     status === "not_started" ? "Not started" : status === "active" ? "Active" : status;
-  const statusClass =
-    status === "not_started"
-      ? "bg-border text-muted"
-      : "bg-accent-soft text-accent";
+  const statusTone =
+    status === "not_started" ? "neutral" : status === "active" ? "accent" : "success";
 
   return (
     <li
-      className={`rounded-xl border border-border bg-app p-3.5 transition-opacity ${busy ? "opacity-60" : ""
-        }`}
+      className={`rounded-lg border border-border bg-surface-2/60 p-3 transition-opacity ${
+        busy ? "opacity-60" : ""
+      }`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate text-sm font-medium">{challenge.title}</p>
-            <span
-              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusClass}`}
-            >
+          <div className="flex flex-wrap items-center gap-1.5">
+            <p className="truncate text-[13px] font-medium text-fg">{challenge.title}</p>
+            <Badge tone={statusTone} dot>
               {statusLabel}
-            </span>
+            </Badge>
           </div>
 
-          <p className="mt-1 text-xs text-muted">
+          <p className="mt-1 text-2xs text-muted">
             {GOAL_LABELS[challenge.goal_type]}
             {daysRemaining !== null && daysRemaining >= 0
               ? ` · ${daysRemaining} day${daysRemaining === 1 ? "" : "s"} left`
@@ -216,47 +209,37 @@ function DashboardChallengeRow({
         </div>
 
         {challenge.goal_type === "checkin_count" && status === "active" ? (
-          <button
-            type="button"
+          <Button
+            variant="success"
+            size="sm"
+            active={checkedInToday}
             onClick={onCheckIn}
             disabled={busy}
             aria-pressed={checkedInToday}
             aria-label={`Check in to "${challenge.title}" today`}
-            className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed ${checkedInToday
-                ? "border-emerald-500 bg-emerald-500 text-white"
-                : "border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
-              }`}
           >
             {checkedInToday ? "Checked in" : "Check in"}
-          </button>
+          </Button>
         ) : null}
       </div>
 
       {/* The bar only exists when there is a real target to divide by. */}
       {target !== null ? (
         <div className="mt-2.5">
-          <div className="mb-1 flex items-center justify-between text-xs">
-            <span className="text-muted">
+          <div className="mb-1 flex items-center justify-between text-2xs">
+            <span className="tabular-nums text-muted">
               {current} / {target}
             </span>
-            <span className="font-semibold">{percent}%</span>
+            <span className="font-semibold tabular-nums text-fg">{percent}%</span>
           </div>
-          <div
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={percent ?? 0}
-            aria-label={`${challenge.title} progress`}
-            className="h-2 w-full overflow-hidden rounded-full bg-border"
-          >
-            <div
-              className="h-full rounded-full bg-accent transition-all"
-              style={{ width: `${percent ?? 0}%` }}
-            />
-          </div>
+          <ProgressBar
+            value={current}
+            max={target}
+            label={`${challenge.title} progress`}
+          />
         </div>
       ) : (
-        <p className="mt-2.5 text-xs text-muted">Tracked by hand - no number to show.</p>
+        <p className="mt-2.5 text-2xs text-muted">Tracked by hand — no number to show.</p>
       )}
     </li>
   );

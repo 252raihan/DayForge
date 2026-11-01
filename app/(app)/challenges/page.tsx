@@ -3,8 +3,29 @@
 import { useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import Modal from "@/components/tasks/Modal";
-import { EmptyState, ErrorBanner, LoadingRows, StatTile } from "@/components/ui";
-import { Field, FormMessage } from "@/components/ui/Form";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  LoadingRows,
+  ProgressBar,
+  SelectField,
+  StatTile,
+  TextareaField,
+} from "@/components/ui";
+import {
+  ChallengesIcon,
+  CheckIcon,
+  EditIcon,
+  FlameIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@/components/icons";
 import { useChallenges } from "@/hooks/useChallenges";
 import { todayKey } from "@/hooks/useTasks";
 import { dayKeysBetween, longestDailyStreak } from "@/lib/challenge-utils";
@@ -74,52 +95,23 @@ export default function ChallengesPage() {
     }
   }
 
-  async function handleDelete(challenge: Challenge) {
-    setBusyId(challenge.id);
-    setActionError(null);
-    try {
-      await deleteChallenge(challenge.id);
-      setDeleting(null);
-    } catch (err) {
-      setActionError(
-        err instanceof Error ? err.message : "Could not delete the challenge.",
-      );
-    } finally {
-      setBusyId(null);
-    }
-  }
-
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <PageHeader
-          title="Challenges"
-          description="Time-boxed goals and streaks to keep your study routine on track. Progress is counted from your real task, habit and check-in records."
-        />
-
-        <button
-          type="button"
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-          className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-        >
-          <svg
-            className="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+      <PageHeader
+        title="Challenges"
+        description="Time-boxed goals and streaks to keep your study routine on track. Progress is counted from your real task, habit and check-in records."
+        actions={
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
           >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          New challenge
-        </button>
-      </div>
+            <PlusIcon className="h-4 w-4" strokeWidth={2} />
+            New challenge
+          </Button>
+        }
+      />
 
       {error ? (
         <div className="mb-4">
@@ -129,12 +121,12 @@ export default function ChallengesPage() {
 
       {actionError ? (
         <div className="mb-4">
-          <ErrorBanner message={actionError} />
+          <Alert onDismiss={() => setActionError(null)}>{actionError}</Alert>
         </div>
       ) : null}
 
       {!loading && progress.length > 0 ? (
-        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatTile label="Total" value={progress.length} hint="All challenges" />
           <StatTile label="Active" value={active} hint="Running now" />
           <StatTile
@@ -156,8 +148,9 @@ export default function ChallengesPage() {
         <LoadingRows count={3} label="Loading challenges" />
       ) : progress.length === 0 ? (
         <EmptyState
+          icon={<ChallengesIcon className="h-5 w-5" />}
           title="No challenges yet"
-          hint="Set a time-boxed goal, then let DayForge count your progress for you."
+          hint="Set a time-boxed goal, then let DayForge count your progress for you from real task, habit and check-in records."
           actionLabel="New challenge"
           onClick={() => {
             setEditing(null);
@@ -165,7 +158,7 @@ export default function ChallengesPage() {
           }}
         />
       ) : (
-        <ul className="space-y-3">
+        <ul className="grid gap-3 lg:grid-cols-2">
           {progress.map((item) => (
             <ChallengeCard
               key={item.challenge.id}
@@ -196,35 +189,29 @@ export default function ChallengesPage() {
       />
 
       {/* Deleting a challenge takes its check-ins with it, so say so. */}
-      <Modal
+      <ConfirmDialog
         open={Boolean(deleting)}
         onClose={() => setDeleting(null)}
         title="Delete this challenge?"
         description="Its check-in history is removed with it. This can't be undone."
+        confirmLabel="Delete challenge"
+        onConfirm={async () => {
+          if (!deleting) return;
+          setBusyId(deleting.id);
+          try {
+            await deleteChallenge(deleting.id);
+            setDeleting(null);
+          } finally {
+            setBusyId(null);
+          }
+        }}
       >
         {deleting ? (
-          <p className="mb-5 rounded-xl border border-border bg-app px-3.5 py-2.5 text-sm">
+          <p className="mb-5 rounded-lg border border-border bg-surface-2 px-3.5 py-2.5 text-[13px] text-fg">
             {deleting.title}
           </p>
         ) : null}
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={() => setDeleting(null)}
-            className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-accent-soft hover:text-accent"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={deleting ? busyId === deleting.id : false}
-            onClick={() => deleting && handleDelete(deleting)}
-            className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60 sm:w-40"
-          >
-            Delete challenge
-          </button>
-        </div>
-      </Modal>
+      </ConfirmDialog>
     </>
   );
 }
@@ -248,12 +235,14 @@ function ChallengeCard({
   const { challenge, status, current, target, percent, daysRemaining, checkedInToday } = item;
   const goal = GOAL_LABELS[challenge.goal_type];
 
-  const statusStyles: Record<typeof status, string> = {
-    active: "bg-accent-soft text-accent",
-    completed:
-      "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-    expired: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-    not_started: "bg-border text-muted",
+  const statusTones: Record<
+    typeof status,
+    "accent" | "success" | "warning" | "neutral"
+  > = {
+    active: "accent",
+    completed: "success",
+    expired: "warning",
+    not_started: "neutral",
   };
   const statusLabels: Record<typeof status, string> = {
     active: "Active",
@@ -276,29 +265,28 @@ function ChallengeCard({
   );
 
   return (
-    <li
-      className={`rounded-2xl border border-border bg-surface p-4 ${
-        busy ? "opacity-60" : ""
+    <Card
+      as="li"
+      className={`flex flex-col ${busy ? "opacity-60" : ""} ${
+        status === "completed" ? "border-emerald-200/70 dark:border-emerald-900/60" : ""
       }`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold">{challenge.title}</h3>
-            <span
-              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusStyles[status]}`}
-            >
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <h3 className="truncate text-[13.5px] font-semibold text-fg">{challenge.title}</h3>
+            <Badge tone={statusTones[status]} dot>
               {statusLabels[status]}
-            </span>
+            </Badge>
           </div>
 
           {challenge.description ? (
-            <p className="mt-1 whitespace-pre-wrap text-sm text-muted">
+            <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-[13px] leading-relaxed text-muted">
               {challenge.description}
             </p>
           ) : null}
 
-          <p className="mt-1.5 text-xs text-muted">
+          <p className="mt-1.5 text-2xs tabular-nums text-muted">
             {formatKey(challenge.start_date)}
             {challenge.target_date ? ` → ${formatKey(challenge.target_date)}` : " → open-ended"}
             {windowDays !== null ? ` · ${windowDays} day window` : null}
@@ -310,87 +298,99 @@ function ChallengeCard({
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onEdit}
             disabled={busy}
-            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-muted transition-colors hover:bg-accent-soft hover:text-accent disabled:opacity-50"
+            aria-label={`Edit "${challenge.title}"`}
           >
-            Edit
-          </button>
-          <button
-            type="button"
+            <EditIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onDelete}
             disabled={busy}
-            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 dark:text-red-300 dark:hover:bg-red-950"
+            aria-label={`Delete "${challenge.title}"`}
+            className="hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
           >
-            Delete
-          </button>
+            <TrashIcon className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
       {/* Progress. The bar is only drawn when there is a real target. */}
       {target !== null ? (
-        <div className="mt-3">
-          <div className="mb-1 flex items-center justify-between text-xs">
-            <span className="text-muted">{goal.label}</span>
-            <span className="font-semibold">
-              {current} / {target} ({percent}%)
+        <div className="mt-3.5">
+          <div className="mb-1.5 flex items-end justify-between gap-2">
+            <span className="text-2xs text-muted">{goal.label}</span>
+            <span className="text-right">
+              <span className="text-xl font-semibold leading-none tabular-nums text-fg">
+                {percent}%
+              </span>
+              <span className="ml-1.5 text-2xs tabular-nums text-muted">
+                {current}/{target}
+              </span>
             </span>
           </div>
-          <div
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={percent ?? 0}
-            aria-label={`${challenge.title} progress`}
-            className="h-2 w-full overflow-hidden rounded-full bg-border"
-          >
-            <div
-              className={`h-full rounded-full transition-all ${
-                status === "completed"
-                  ? "bg-emerald-500"
-                  : status === "expired"
-                    ? "bg-amber-500"
-                    : "bg-accent"
-              }`}
-              style={{ width: `${percent ?? 0}%` }}
-            />
-          </div>
+          <ProgressBar
+            value={percent ?? 0}
+            tone={
+              status === "completed"
+                ? "success"
+                : status === "expired"
+                  ? "warning"
+                  : "accent"
+            }
+            label={`${challenge.title} progress`}
+            height="h-2"
+          />
         </div>
       ) : (
-        <p className="mt-3 rounded-xl border border-dashed border-border px-3 py-2 text-xs text-muted">
+        <p className="mt-3 rounded-lg border border-dashed border-border px-3 py-2 text-2xs leading-relaxed text-muted">
           {goal.label}: nothing to count for this challenge. Edit it to add a goal type
           and target.
         </p>
       )}
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted">
-          {goal.hint}
-          {streak !== null && checkinDates.length > 0
-            ? ` · longest run ${streak} day${streak === 1 ? "" : "s"}`
-            : ""}
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-3">
+        <p className="flex min-w-0 items-center gap-1.5 text-2xs text-muted">
+          {streak !== null && checkinDates.length > 0 ? (
+            <>
+              <FlameIcon className="h-3 w-3 shrink-0 text-amber-500" />
+              <span className="truncate">
+                Longest run {streak} day{streak === 1 ? "" : "s"}
+              </span>
+            </>
+          ) : (
+            <span className="truncate">{goal.hint}</span>
+          )}
         </p>
 
         {challenge.goal_type === "checkin_count" ? (
-          <button
-            type="button"
+          <Button
+            variant="success"
+            size="sm"
+            active={checkedInToday}
             onClick={onCheckIn}
             disabled={busy}
             aria-pressed={checkedInToday}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed ${
-              checkedInToday
-                ? "border-emerald-500 bg-emerald-500 text-white"
-                : "border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
-            }`}
+            className="h-8 shrink-0"
           >
-            {checkedInToday ? "Checked in today" : "Check in"}
-          </button>
+            {checkedInToday ? (
+              <>
+                <CheckIcon className="h-4 w-4" />
+                Checked in
+              </>
+            ) : (
+              "Check in"
+            )}
+          </Button>
         ) : null}
       </div>
-    </li>
+    </Card>
   );
 }
 
@@ -484,7 +484,7 @@ function ChallengeFormModal({
       description="Pick a measurable goal and a window. Progress is counted from real records."
     >
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-        {error ? <FormMessage>{error}</FormMessage> : null}
+        {error ? <Alert onDismiss={() => setError(null)}>{error}</Alert> : null}
 
         <Field
           id="challenge-title"
@@ -495,18 +495,14 @@ function ChallengeFormModal({
           required
         />
 
-        <div className="space-y-1.5">
-          <label htmlFor="challenge-description" className="block text-sm font-medium">
-            Description <span className="font-normal text-muted">(optional)</span>
-          </label>
-          <textarea
-            id="challenge-description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            className="w-full resize-y rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/40"
-          />
-        </div>
+        <TextareaField
+          id="challenge-description"
+          label="Description"
+          optional
+          value={description}
+          onChange={setDescription}
+          rows={3}
+        />
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Field
@@ -527,24 +523,19 @@ function ChallengeFormModal({
           />
         </div>
 
-        <div className="space-y-1.5">
-          <label htmlFor="challenge-goal" className="block text-sm font-medium">
-            How progress is measured
-          </label>
-          <select
-            id="challenge-goal"
-            value={goalType}
-            onChange={(e) => setGoalType(e.target.value as ChallengeGoalType)}
-            className="w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/40"
-          >
-            {(Object.keys(GOAL_LABELS) as ChallengeGoalType[]).map((value) => (
-              <option key={value} value={value}>
-                {GOAL_LABELS[value].label}
-              </option>
-            ))}
-          </select>
-          <p className="text-xs text-muted">{GOAL_LABELS[goalType].hint}</p>
-        </div>
+        <SelectField
+          id="challenge-goal"
+          label="How progress is measured"
+          value={goalType}
+          onChange={(value) => setGoalType(value as ChallengeGoalType)}
+          hint={GOAL_LABELS[goalType].hint}
+        >
+          {(Object.keys(GOAL_LABELS) as ChallengeGoalType[]).map((value) => (
+            <option key={value} value={value}>
+              {GOAL_LABELS[value].label}
+            </option>
+          ))}
+        </SelectField>
 
         {goalType !== "manual" ? (
           <Field
@@ -559,21 +550,17 @@ function ChallengeFormModal({
         ) : null}
 
         <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={pending}
-            className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-accent-soft hover:text-accent disabled:opacity-60"
-          >
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            disabled={pending}
-            className="w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-40"
+            loading={pending}
+            loadingLabel="Saving..."
+            className="w-full sm:w-40"
           >
-            {pending ? "Saving..." : challenge ? "Save changes" : "Create challenge"}
-          </button>
+            {challenge ? "Save changes" : "Create challenge"}
+          </Button>
         </div>
       </form>
     </Modal>

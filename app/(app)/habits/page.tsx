@@ -2,13 +2,38 @@
 
 import { useEffect, useState } from "react";
 import PageHeader from "@/components/PageHeader";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  Checkbox,
+  ChoiceChip,
+  ConfirmDialog,
+  EmptyState,
+  ErrorBanner,
+  Field,
+  ProgressBar,
+  LoadingRows,
+  SegmentedControl,
+  StatTile,
+  TextareaField,
+} from "@/components/ui";
 import Modal from "@/components/tasks/Modal";
-import { EmptyState, ErrorBanner, LoadingRows, StatTile } from "@/components/ui";
-import { Field, FormMessage } from "@/components/ui/Form";
+import {
+  CheckIcon,
+  EditIcon,
+  FlameIcon,
+  HabitsIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@/components/icons";
 import { HABIT_CHART_DAYS, isDoneToday, useHabits } from "@/hooks/useHabits";
 import { dayWindow, isScheduledOn, weekdayOf } from "@/lib/habit-utils";
 import { todayKey, WEEKDAY_LABELS } from "@/hooks/useTasks";
 import type { Habit, HabitFrequency, HabitInsert, HabitStats } from "@/types";
+import { cn } from "@/lib/cn";
 
 // Habits: daily routines with a real, persisted history.
 //
@@ -77,52 +102,23 @@ export default function HabitsPage() {
     }
   }
 
-  async function handleDelete(habit: Habit) {
-    setBusyId(habit.id);
-    setActionError(null);
-    try {
-      await deleteHabit(habit.id);
-      setDeleting(null);
-    } catch (err) {
-      setActionError(
-        err instanceof Error ? err.message : "Could not delete the habit.",
-      );
-    } finally {
-      setBusyId(null);
-    }
-  }
-
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <PageHeader
-          title="Habits"
-          description="Daily and weekly routines you want to repeat. Every check-in is saved for the day you made it, so streaks and history are real."
-        />
-
-        <button
-          type="button"
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-          className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-        >
-          <svg
-            className="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+      <PageHeader
+        title="Habits"
+        description="Daily and weekly routines you want to repeat. Every check-in is saved for the day you made it, so streaks and history are real."
+        actions={
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
           >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          New habit
-        </button>
-      </div>
+            <PlusIcon className="h-4 w-4" strokeWidth={2} />
+            New habit
+          </Button>
+        }
+      />
 
       {error ? (
         <div className="mb-4">
@@ -132,12 +128,12 @@ export default function HabitsPage() {
 
       {actionError ? (
         <div className="mb-4">
-          <ErrorBanner message={actionError} />
+          <Alert onDismiss={() => setActionError(null)}>{actionError}</Alert>
         </div>
       ) : null}
 
       {!loading && active > 0 ? (
-        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatTile label="Habits" value={active} hint="Being tracked" />
           <StatTile
             label="Today"
@@ -161,79 +157,110 @@ export default function HabitsPage() {
 
       {/* Today's check-in list: only the habits actually scheduled for today. */}
       {!loading && todayStats.length > 0 ? (
-        <section className="mb-5 rounded-2xl border border-border bg-surface p-5">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold tracking-tight">Today&apos;s habits</h2>
-            <p className="text-xs text-muted">
-              {doneToday}/{todayStats.length} done
-            </p>
+        <Card className="mb-4">
+          <CardHeader
+            title="Today's habits"
+            icon={<CheckIcon className="h-4 w-4" />}
+            description="Tap a row to check in — each check-in is saved for today."
+            action={
+              <Badge tone={doneToday === todayStats.length ? "success" : "neutral"} dot>
+                {doneToday}/{todayStats.length} done
+              </Badge>
+            }
+          />
+
+          <div className="mb-3">
+            <ProgressBar
+              value={doneToday}
+              max={todayStats.length}
+              tone={doneToday === todayStats.length ? "success" : "accent"}
+              label="Today's habit check-ins"
+            />
           </div>
 
-          <ul className="space-y-2">
+          <ul className="-mx-1 divide-y divide-border/70">
             {todayStats.map((item) => {
               const today = todayKey();
               const done = isDoneToday(item, today);
               return (
-                <li
-                  key={item.habit.id}
-                  className={`flex items-center justify-between gap-3 rounded-xl border border-border bg-app px-3.5 py-2.5 ${
-                    busyId === item.habit.id ? "opacity-60" : ""
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{item.habit.title}</p>
-                    <p className="mt-0.5 text-xs text-muted">
-                      {item.currentStreak > 0
-                        ? `${item.currentStreak} day streak · `
-                        : ""}
-                      {item.completedLast7}/{item.targetLast7} in the last 7 days
-                    </p>
-                  </div>
+                <li key={item.habit.id}>
+                  <label
+                    className={cn(
+                      "flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1 py-2.5 transition-colors hover:bg-surface-2/60",
+                      busyId === item.habit.id && "opacity-60",
+                    )}
+                  >
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <Checkbox
+                        checked={done}
+                        disabled={busyId === item.habit.id}
+                        onChange={() => handleToggleCheckIn(item)}
+                        aria-label={`Mark "${item.habit.title}" done today`}
+                      />
+                      <div className="min-w-0">
+                        <p
+                          className={cn(
+                            "truncate text-[13px] font-medium",
+                            done ? "text-muted line-through" : "text-fg",
+                          )}
+                        >
+                          {item.habit.title}
+                        </p>
+                        <p className="mt-0.5 flex items-center gap-1.5 text-2xs text-muted">
+                          {item.currentStreak > 0 ? (
+                            <>
+                              <FlameIcon className="h-3 w-3 text-amber-500" />
+                              {item.currentStreak} day streak
+                              <span aria-hidden="true">·</span>
+                            </>
+                          ) : null}
+                          {item.completedLast7}/{item.targetLast7} in the last 7 days
+                        </p>
+                      </div>
+                    </div>
 
-                  <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold">
-                    <input
-                      type="checkbox"
-                      checked={done}
-                      disabled={busyId === item.habit.id}
-                      onChange={() => handleToggleCheckIn(item)}
-                      aria-label={`Mark "${item.habit.title}" done today`}
-                      style={{ height: "1.25rem", width: "1.25rem" }}
-                      className="cursor-pointer rounded border-border accent-[rgb(var(--accent))]"
-                    />
-                    {done ? "Done" : "Not yet"}
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-md border px-2 py-0.5 text-2xs font-medium",
+                        done
+                          ? "border-transparent bg-surface-2 text-muted"
+                          : "border-accent/30 bg-accent-soft text-accent",
+                      )}
+                      aria-hidden="true"
+                    >
+                      {done ? "Done" : "Check in"}
+                    </span>
                   </label>
                 </li>
               );
             })}
           </ul>
 
-          <p className="mt-3 text-xs text-muted">
-            Missed a day? Open a habit below and tick any day in the last two weeks -
+          <p className="mt-3 text-2xs leading-relaxed text-muted">
+            Missed a day? Open a habit below and tick any day in the last two weeks —
             the history is stored per day, so it can be corrected.
           </p>
-        </section>
+        </Card>
       ) : null}
 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold tracking-tight">All habits</h2>
-        <button
-          type="button"
-          onClick={() => setIncludeArchived((prev) => !prev)}
-          aria-pressed={includeArchived}
-          className={`rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${
-            includeArchived
-              ? "border-accent bg-accent-soft text-accent"
-              : "border-border text-muted hover:bg-accent-soft/60 hover:text-accent"
-          }`}
-        >
-          {includeArchived ? "Showing archived" : "Show archived"}
-        </button>
+        <h2 className="text-sm font-semibold tracking-tight text-fg">All habits</h2>
+        <SegmentedControl
+          ariaLabel="Habit visibility"
+          value={includeArchived ? "all" : "active"}
+          onChange={(value) => setIncludeArchived(value === "all")}
+          options={[
+            { value: "active", label: "Active" },
+            { value: "all", label: "Include archived" },
+          ]}
+        />
       </div>
 
       {loading ? (
         <LoadingRows count={3} label="Loading habits" />
       ) : stats.length === 0 ? (
         <EmptyState
+          icon={<HabitsIcon className="h-5 w-5" />}
           title={includeArchived ? "No habits yet" : "No active habits"}
           hint="Create a habit you want to keep, then check it off each day to build a streak."
           actionLabel="New habit"
@@ -243,7 +270,7 @@ export default function HabitsPage() {
           }}
         />
       ) : (
-        <ul className="space-y-3">
+        <ul className="grid gap-3 sm:grid-cols-2">
           {stats.map((item) => (
             <HabitCard
               key={item.habit.id}
@@ -285,35 +312,29 @@ export default function HabitsPage() {
         }}
       />
 
-      <Modal
+      <ConfirmDialog
         open={Boolean(deleting)}
         onClose={() => setDeleting(null)}
         title="Delete this habit?"
         description="Every check-in recorded for it is deleted too. This can't be undone."
+        confirmLabel="Delete habit"
+        onConfirm={async () => {
+          if (!deleting) return;
+          setBusyId(deleting.id);
+          try {
+            await deleteHabit(deleting.id);
+            setDeleting(null);
+          } finally {
+            setBusyId(null);
+          }
+        }}
       >
         {deleting ? (
-          <p className="mb-5 rounded-xl border border-border bg-app px-3.5 py-2.5 text-sm">
+          <p className="mb-5 rounded-xl border border-border bg-app px-3.5 py-2.5 text-sm text-fg">
             {deleting.title}
           </p>
         ) : null}
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={() => setDeleting(null)}
-            className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-accent-soft hover:text-accent"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={deleting ? busyId === deleting.id : false}
-            onClick={() => deleting && handleDelete(deleting)}
-            className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60 sm:w-40"
-          >
-            Delete habit
-          </button>
-        </div>
-      </Modal>
+      </ConfirmDialog>
     </>
   );
 }
@@ -348,79 +369,137 @@ function HabitCard({
   );
 
   return (
-    <li
-      className={`rounded-2xl border border-border bg-surface p-4 ${
-        busy ? "opacity-60" : ""
-      } ${habit.archived ? "border-dashed" : ""}`}
+    <Card
+      as="li"
+      className={`flex flex-col ${busy ? "opacity-60" : ""} ${
+        habit.archived ? "border-dashed bg-surface-2/40" : ""
+      }`}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold">{habit.title}</h3>
-            {habit.archived ? (
-              <span className="rounded-full bg-border px-2 py-0.5 text-[11px] font-semibold text-muted">
-                Archived
-              </span>
-            ) : null}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <h3 className="truncate text-[13.5px] font-semibold text-fg">{habit.title}</h3>
+            {habit.archived ? <Badge tone="neutral">Archived</Badge> : null}
             {!dueToday && !habit.archived ? (
-              <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">
-                Not scheduled today
-              </span>
+              <Badge tone="neutral">Not today</Badge>
             ) : null}
           </div>
 
           {habit.description ? (
-            <p className="mt-1 text-sm text-muted">{habit.description}</p>
+            <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-muted">
+              {habit.description}
+            </p>
           ) : null}
 
-          <p className="mt-1.5 text-xs text-muted">
-            {scheduleLabel(habit)} · {item.completedThisWeek}/{item.targetThisWeek} this week
-            {item.missedLastWeek ? " · last week fell short" : ""}
+          <p className="mt-1.5 text-2xs text-muted">
+            {scheduleLabel(habit)}
+            {item.missedLastWeek ? (
+              <span className="text-amber-600 dark:text-amber-400"> · last week fell short</span>
+            ) : null}
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onEdit}
             disabled={busy}
-            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-muted transition-colors hover:bg-accent-soft hover:text-accent disabled:opacity-50"
+            aria-label={`Edit "${habit.title}"`}
           >
-            Edit
-          </button>
-          <button
-            type="button"
+            <EditIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onArchive}
             disabled={busy}
-            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-muted transition-colors hover:bg-accent-soft hover:text-accent disabled:opacity-50"
+            aria-label={habit.archived ? `Unarchive "${habit.title}"` : `Archive "${habit.title}"`}
+            title={habit.archived ? "Unarchive" : "Archive"}
           >
-            {habit.archived ? "Unarchive" : "Archive"}
-          </button>
-          <button
-            type="button"
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.75}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3" y="4" width="18" height="4" rx="1" />
+              <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+              <path d="M10 12h4" />
+            </svg>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onDelete}
             disabled={busy}
-            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 dark:text-red-300 dark:hover:bg-red-950"
+            aria-label={`Delete "${habit.title}"`}
+            className="hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
           >
-            Delete
-          </button>
+            <TrashIcon className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
-      {/* Streaks, all derived from stored check-ins. */}
-      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs">
-        <span className="font-semibold">
-          {streak > 0 ? `${streak} day streak` : "No current streak"}
+      {/* Streak summary: the headline streak, then the lifetime figures. */}
+      <div className="mt-3 flex items-center gap-3 rounded-lg border border-border bg-surface-2/60 px-3 py-2">
+        <span
+          className={cn(
+            "grid h-9 w-9 shrink-0 place-items-center rounded-lg",
+            streak > 0
+              ? "bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400"
+              : "bg-surface text-muted",
+          )}
+          aria-hidden="true"
+        >
+          <FlameIcon className="h-[18px] w-[18px]" />
         </span>
-        <span className="text-muted">Best: {bestStreak} days</span>
-        <span className="text-muted">Total: {item.totalCompletions} check-ins</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold tabular-nums text-fg">
+            {streak > 0 ? `${streak} day streak` : "No current streak"}
+          </p>
+          <p className="text-2xs text-muted">
+            Best {bestStreak} · {item.totalCompletions} check-ins total
+          </p>
+        </div>
+        <div className="hidden shrink-0 text-right sm:block">
+          <p className="text-[13px] font-semibold tabular-nums text-fg">
+            {item.completedThisWeek}/{item.targetThisWeek}
+          </p>
+          <p className="text-2xs text-muted">this week</p>
+        </div>
+      </div>
+
+      {/* Weekly completion: this week's progress against the schedule target. */}
+      <div className="mt-3">
+        <div className="mb-1.5 flex items-center justify-between text-2xs text-muted">
+          <span>This week</span>
+          <span className="tabular-nums sm:hidden">
+            {item.completedThisWeek}/{item.targetThisWeek}
+          </span>
+        </div>
+        <ProgressBar
+          value={item.completedThisWeek}
+          max={Math.max(item.targetThisWeek, 1)}
+          tone={
+            item.targetThisWeek > 0 && item.completedThisWeek >= item.targetThisWeek
+              ? "success"
+              : "accent"
+          }
+          label={`${habit.title} progress this week`}
+        />
       </div>
 
       {/* The editable strip: each square is one real, persisted day. */}
       <div className="mt-3">
-        <p className="mb-1.5 text-[11px] text-muted">
-          Last {HABIT_CHART_DAYS} days - tick a day to correct it
-        </p>
+        <div className="mb-1.5 flex items-center justify-between">
+          <p className="text-2xs text-muted">Last {HABIT_CHART_DAYS} days</p>
+          <p className="text-2xs text-muted/80">tap a day to correct it</p>
+        </div>
         <div className="flex flex-wrap gap-1">
           {days.map((date) => {
             const log = doneByDate.get(date);
@@ -439,17 +518,16 @@ function HabitCard({
                 title={label}
                 aria-label={label}
                 aria-pressed={done}
-                className={`h-7 w-7 rounded-md border text-[10px] font-semibold transition-colors disabled:cursor-not-allowed ${
+                className={cn(
+                  "h-7 w-7 rounded-md border text-3xs font-semibold transition-colors disabled:cursor-not-allowed",
                   done
                     ? "border-emerald-500 bg-emerald-500 text-white"
                     : scheduled
-                      ? "border-border text-muted hover:border-emerald-400"
-                      : "border-dashed border-border text-muted/50"
-                }`}
+                      ? "border-border bg-surface text-muted hover:border-emerald-400 hover:text-emerald-600"
+                      : "border-dashed border-border/80 bg-transparent text-muted/50",
+                )}
               >
-                {weekdayOf(date) === 0
-                  ? WEEKDAY_LABELS[0].charAt(0)
-                  : WEEKDAY_LABELS[weekdayOf(date)].charAt(0)}
+                {WEEKDAY_LABELS[weekdayOf(date)].charAt(0)}
               </button>
             );
           })}
@@ -457,23 +535,28 @@ function HabitCard({
       </div>
 
       {dueToday && !habit.archived ? (
-        <div className="mt-3">
-          <button
-            type="button"
+        <div className="mt-auto pt-3">
+          <Button
+            variant="success"
+            size="sm"
+            active={Boolean(doneByDate.get(today))}
             onClick={onToggleToday}
             disabled={busy}
             aria-pressed={Boolean(doneByDate.get(today))}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed ${
-              doneByDate.get(today)
-                ? "border-emerald-500 bg-emerald-500 text-white"
-                : "border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
-            }`}
+            className="h-8 w-full"
           >
-            {doneByDate.get(today) ? "Done today" : "Mark done today"}
-          </button>
+            {doneByDate.get(today) ? (
+              <>
+                <CheckIcon className="h-4 w-4" />
+                Done today
+              </>
+            ) : (
+              "Mark done today"
+            )}
+          </Button>
         </div>
       ) : null}
-    </li>
+    </Card>
   );
 }
 
@@ -570,7 +653,7 @@ function HabitFormModal({
       description="How often do you want to do this? Streaks use whichever days you pick."
     >
       <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-        {error ? <FormMessage>{error}</FormMessage> : null}
+        {error ? <Alert onDismiss={() => setError(null)}>{error}</Alert> : null}
 
         <Field
           id="habit-title"
@@ -581,21 +664,17 @@ function HabitFormModal({
           required
         />
 
-        <div className="space-y-1.5">
-          <label htmlFor="habit-description" className="block text-sm font-medium">
-            Description <span className="font-normal text-muted">(optional)</span>
-          </label>
-          <textarea
-            id="habit-description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-            className="w-full resize-y rounded-xl border border-border bg-surface px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/40"
-          />
-        </div>
+        <TextareaField
+          id="habit-description"
+          label="Description"
+          optional
+          value={description}
+          onChange={setDescription}
+          rows={2}
+        />
 
         <fieldset className="space-y-1.5">
-          <legend className="block text-sm font-medium">Frequency</legend>
+          <legend className="block text-sm font-medium text-fg">Frequency</legend>
           <div className="flex flex-wrap gap-2">
             {(
               [
@@ -604,24 +683,13 @@ function HabitFormModal({
                 { value: "custom", label: "Times per week" },
               ] as { value: HabitFrequency; label: string }[]
             ).map((option) => (
-              <label
+              <ChoiceChip
                 key={option.value}
-                className={`cursor-pointer rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
-                  frequency === option.value
-                    ? "border-accent bg-accent-soft text-accent"
-                    : "border-border text-muted hover:bg-accent-soft/50"
-                }`}
+                selected={frequency === option.value}
+                onClick={() => setFrequency(option.value)}
               >
-                <input
-                  type="radio"
-                  name="habit-frequency"
-                  value={option.value}
-                  checked={frequency === option.value}
-                  onChange={() => setFrequency(option.value)}
-                  className="sr-only"
-                />
                 {option.label}
-              </label>
+              </ChoiceChip>
             ))}
           </div>
         </fieldset>
@@ -633,28 +701,20 @@ function HabitFormModal({
               {weekdayOrder.map((day) => {
                 const selected = days.includes(day);
                 return (
-                  <label
+                  <ChoiceChip
                     key={day}
-                    className={`cursor-pointer rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                      selected
-                        ? "border-accent bg-accent-soft text-accent"
-                        : "border-border text-muted hover:bg-accent-soft/50"
-                    }`}
+                    selected={selected}
+                    className="px-2.5 py-1.5 text-xs"
+                    onClick={() =>
+                      setDays((prev) =>
+                        prev.includes(day)
+                          ? prev.filter((value) => value !== day)
+                          : [...prev, day].sort((a, b) => a - b),
+                      )
+                    }
                   >
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={selected}
-                      onChange={() =>
-                        setDays((prev) =>
-                          prev.includes(day)
-                            ? prev.filter((value) => value !== day)
-                            : [...prev, day].sort((a, b) => a - b),
-                        )
-                      }
-                    />
                     {WEEKDAY_LABELS[day]}
-                  </label>
+                  </ChoiceChip>
                 );
               })}
             </div>
@@ -673,21 +733,17 @@ function HabitFormModal({
         ) : null}
 
         <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={pending}
-            className="rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-accent-soft hover:text-accent disabled:opacity-60"
-          >
+          <Button variant="secondary" onClick={onClose} disabled={pending}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            disabled={pending}
-            className="w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-40"
+            loading={pending}
+            loadingLabel="Saving..."
+            className="w-full sm:w-40"
           >
-            {pending ? "Saving..." : habit ? "Save changes" : "Create habit"}
-          </button>
+            {habit ? "Save changes" : "Create habit"}
+          </Button>
         </div>
       </form>
     </Modal>

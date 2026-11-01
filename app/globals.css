@@ -4,42 +4,52 @@
 
 /* Semantic color tokens. Values are space-separated RGB channels so Tailwind
    can apply opacity modifiers (e.g. `bg-surface/80`).
-   Light theme = default; dark theme overrides under `.dark`. */
+   Light theme = default; dark theme overrides under `.dark`.
+
+   The palette is deliberately neutral: soft warm-grey page, white surfaces,
+   hairline borders, and a single indigo/violet accent used only for primary
+   action and active state. Colour lives in status dots and numbers, never in
+   whole panels. */
 :root {
-  --app-bg: 248 250 252; /* slate-50  - page background */
-  --surface: 255 255 255; /* white     - cards, sidebar, top bar */
-  --border: 226 232 240; /* slate-200 - hairlines and dividers */
-  --muted: 100 116 139; /* slate-500 - secondary text */
-  --accent: 79 70 229; /* indigo-600 - primary actions */
-  --accent-soft: 238 242 255; /* indigo-50 - active nav background */
+  --app-bg: 249 250 251; /* #F9FAFB - page background (neutral, not blue) */
+  --surface: 255 255 255; /* white - cards, sidebar, top bar */
+  --surface-2: 248 249 251; /* #F8F9FB - inset / hover fills inside a card */
+  --border: 232 234 238; /* #E8EAEE - hairlines and dividers */
+  --border-strong: 214 218 226; /* #D6DAE2 - 1px emphasis, e.g. inputs */
+  --muted: 107 114 128; /* gray-500 - secondary text */
+  --fg: 24 28 36; /* #181C24 - primary text */
+  --accent: 99 91 255; /* #635BFF - indigo/violet primary */
+  --accent-soft: 240 240 255; /* #F0F0FF - active nav & tinted fills */
+  --ring: 99 91 255;
+  --shadow-color: 16 24 40;
 }
 
 .dark {
-  /* Premium navy palette for the redesigned dark dashboard.
-     --app-bg is the page, --surface the cards, --border the hairlines. */
-  --app-bg: 8 15 32; /* #080F20 - deep navy page background */
-  --surface: 20 34 58; /* #14223A - card surface */
-  --border: 39 55 81; /* #273751 - subtle blue-gray hairline */
-  --muted: 148 163 184; /* slate-400 - secondary text */
-  --accent: 117 104 255; /* #7568FF - indigo primary action */
-  --accent-soft: 34 43 82; /* deep indigo tint for active/hover fills */
+  /* Deep neutral navy: easier on the eye than pure grey and lets indigo read
+     as the only accent. Surfaces are one step lighter than the page. */
+  --app-bg: 10 12 18; /* #0A0C12 - page background */
+  --surface: 18 21 29; /* #12151D - card surface */
+  --surface-2: 24 28 38; /* #181C26 - inset / hover fills inside a card */
+  --border: 34 39 51; /* #222733 - hairline */
+  --border-strong: 48 55 72; /* #30374 8 - input border */
+  --muted: 145 153 168; /* #9199A8 - secondary text */
+  --fg: 237 240 245; /* #EDF0F5 - primary text */
+  --accent: 129 121 255; /* #8179FF - brighter indigo for dark surfaces */
+  --accent-soft: 35 34 74; /* #23224A - active nav & tinted fills */
+  --ring: 129 121 255;
+  --shadow-color: 0 0 0;
 }
 
-/* Dashboard-only extras, kept out of the token set because they are palette
-   constants (not theme-swapped values). */
+/* Palette constants (not theme-swapped). Kept as variables so charts and
+   status accents pick up the same hues everywhere. */
+:root,
 .dark {
-  --df-card-2: 27 41 64; /* #1B2940 - secondary card tone */
-  --df-violet: 81 69 205; /* #5145CD - deeper violet for gradients */
-  --df-blue: 57 152 255; /* #3998FF - blue highlight */
-  --df-green: 16 201 149; /* #10C995 - success */
-  --df-red: 255 98 109; /* #FF626D - overdue */
-}
-
-.dark body {
-  background-image:
-    radial-gradient(1000px 600px at 85% -10%, rgba(117, 104, 255, 0.1), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(57, 152, 255, 0.07), transparent 60%);
-  background-attachment: fixed;
+  --df-card-2: 27 41 64;
+  --df-violet: 99 91 255;
+  --df-blue: 59 130 246;
+  --df-green: 16 185 129;
+  --df-red: 244 63 94;
+  --df-amber: 245 158 11;
 }
 
 html {
@@ -52,8 +62,43 @@ html.dark {
 
 /* Visible, consistent focus ring for keyboard users. */
 :focus-visible {
-  outline: 2px solid rgb(var(--accent));
+  outline: 2px solid rgb(var(--ring));
   outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   App design system helpers. Small, semantic class names used by the shared
+   primitives so panels, headings and scroll areas cannot drift apart.
+   --------------------------------------------------------------------------- */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    font-family: Inter, Geist, ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+      Roboto, sans-serif;
+    /* Tabular numbers for counters, dates and percentages so they do not jitter
+       as values change. */
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Thin, theme-aware scrollbars; visible only on hover for overflow regions. */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--border-strong)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background-color: rgb(var(--border-strong));
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
 
 /* ---------------------------------------------------------------------------

@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import SubTaskProgress from "@/components/tasks/SubTaskProgress";
+import { Button, Checkbox, Input } from "@/components/ui";
+import { ChevronRightIcon, CloseIcon } from "@/components/icons";
 import type { SubTask } from "@/types";
 
 // The checklist attached to one task card.
@@ -75,27 +77,18 @@ export default function SubTaskList({
   }
 
   return (
-    <div className="mt-3 border-t border-border/70 pt-3">
+    <div className="mt-3 border-t border-border/70 pt-2.5">
       {/* Header: the toggle, plus the progress readout. */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={expanded}
-        className="flex w-full items-center gap-1.5 text-left text-[11px] font-semibold text-muted transition-colors hover:text-accent"
+        className="flex w-full items-center gap-1.5 rounded-md py-0.5 text-left text-2xs font-medium text-muted transition-colors hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       >
-        <svg
+        <ChevronRightIcon
           className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-90" : ""}`}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="m9 18 6-6-6-6" />
-        </svg>
-        {total > 0 ? "Subtasks" : "Add subtasks"}
+        />
+        {total > 0 ? `Subtasks · ${done}/${total} done` : "Add subtasks"}
       </button>
 
       {/* Progress bar with its "2/5 done" label. */}
@@ -134,11 +127,11 @@ export default function SubTaskList({
                 return (
                   <li
                     key={subtask.id}
-                    className={`group/sub flex items-center gap-2 rounded-lg px-1.5 py-1 transition-colors hover:bg-app ${busy ? "opacity-60" : ""
-                      }`}
+                    className={`group/sub flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-surface-2 ${
+                      busy ? "opacity-60" : ""
+                    }`}
                   >
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={subtask.done}
                       disabled={busy}
                       onChange={() => void run(subtask.id, () => onToggle(subtask))}
@@ -147,37 +140,27 @@ export default function SubTaskList({
                           ? `Mark "${subtask.title}" as not done`
                           : `Mark "${subtask.title}" as done`
                       }
-                      className="shrink-0 cursor-pointer rounded border-border accent-[rgb(var(--accent))]"
-                      style={{ height: "0.9rem", width: "0.9rem" }}
+                      className="h-3.5 w-3.5"
                     />
 
                     <span
-                      className={`min-w-0 flex-1 break-words text-xs ${subtask.done ? "text-muted line-through" : ""
-                        }`}
+                      className={`min-w-0 flex-1 break-words text-xs ${
+                        subtask.done ? "text-muted line-through" : "text-fg"
+                      }`}
                     >
                       {subtask.title}
                     </span>
 
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
                       disabled={busy}
                       onClick={() => void run(subtask.id, () => onDelete(subtask.id))}
                       aria-label={`Delete subtask "${subtask.title}"`}
-                      className="shrink-0 rounded p-0.5 text-muted opacity-0 transition-opacity hover:text-red-600 focus:opacity-100 group-hover/sub:opacity-100 disabled:opacity-50"
+                      className="h-6 w-6 shrink-0 text-muted opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 focus:opacity-100 group-hover/sub:opacity-100 disabled:opacity-50 dark:hover:bg-red-950/50"
                     >
-                      <svg
-                        className="h-3.5 w-3.5"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="M18 6 6 18M6 6l12 12" />
-                      </svg>
-                    </button>
+                      <CloseIcon className="h-3.5 w-3.5" />
+                    </Button>
                   </li>
                 );
               })}
@@ -186,7 +169,7 @@ export default function SubTaskList({
 
           {/* Add a subtask. A form so Enter submits, matching the rest of the app. */}
           <form onSubmit={handleAdd} className="flex items-center gap-2">
-            <input
+            <Input
               type="text"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -194,15 +177,18 @@ export default function SubTaskList({
               maxLength={200}
               disabled={pending}
               aria-label="New subtask title"
-              className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs outline-none transition-colors placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/30 disabled:opacity-60"
+              className="h-7 min-w-0 flex-1 px-2.5 py-0 text-xs"
             />
-            <button
+            <Button
               type="submit"
+              variant="secondary"
+              size="sm"
               disabled={pending || draft.trim() === ""}
-              className="shrink-0 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-muted transition-colors hover:bg-accent-soft hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+              loading={pending}
+              loadingLabel="Adding..."
             >
-              {pending ? "Adding..." : "Add"}
-            </button>
+              Add
+            </Button>
           </form>
         </div>
       ) : null}
